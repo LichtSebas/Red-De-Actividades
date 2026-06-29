@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PERT / CPM Profesional - Simulador Estadístico Avanzado</title>
+    <title>PERT / CPM Profesional - Simulador Avanzado con Gantt</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -73,7 +73,8 @@
         }
 
         input[type="text"],
-        input[type="number"] {
+        input[type="number"],
+        select {
             width: 90%;
             padding: 6px;
             border: 1px solid #ccc;
@@ -154,12 +155,16 @@
 
         .tabs {
             margin-bottom: 10px;
+            display: flex;
+            gap: 4px;
         }
 
         .tab-btn {
             background: #e0e0e0;
             color: #333;
-            margin-right: 5px;
+            flex: 1;
+            text-align: center;
+            font-weight: 500;
         }
 
         .tab-btn.active {
@@ -227,21 +232,21 @@
             gap: 10px;
         }
 
-        .form-fila {
+        .form-grupo-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 10px;
         }
 
-        .form-fila label {
+        .form-grupo-row label {
             font-size: 13px;
             font-weight: bold;
             width: 65%;
             color: #34495e;
         }
 
-        .form-fila input {
+        .form-grupo-row input {
             width: 30% !important;
             text-align: center;
             font-weight: bold;
@@ -265,6 +270,27 @@
             margin: 3px 0 0 0;
             font-weight: bold;
         }
+
+        /* Controles específicos de Gantt */
+        .gantt-controls {
+            display: flex;
+            gap: 15px;
+            background: #f2f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            font-size: 12px;
+            align-items: center;
+            font-weight: bold;
+        }
+
+        .gantt-controls label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
     </style>
 </head>
 
@@ -275,6 +301,15 @@
     <div class="container">
         <div class="panel-input">
             <h2>Datos de Entrada</h2>
+
+            <div
+                style="background: #eaf2f8; padding: 12px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #a9cce3; display: flex; align-items: center; justify-content: space-between;">
+                <label style="font-weight: bold; color: #1b4f72; font-size: 13px;">🕒 Unidad Temporal del
+                    Proyecto:</label>
+                <input type="text" id="unidadProyecto" value="semanas"
+                    style="width: 40% !important; padding: 6px; font-weight: bold; color: #1b4f72; border: 1px solid #a9cce3;"
+                    oninput="actualizarUnidadesTexto()">
+            </div>
 
             <div class="config-bar">
                 <label style="font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px;">
@@ -505,11 +540,12 @@
                 </div>
 
                 <div class="form-grupo">
-                    <div class="form-fila" id="filaPlazo">
-                        <label id="labelPlazo">Plazo Objetivo del Proyecto (X semanas):</label>
+                    <div class="form-grupo-row" id="filaPlazo">
+                        <label id="labelPlazo">Plazo Objetivo del Proyecto (X <span
+                                class="txt-unidad">semanas</span>):</label>
                         <input type="number" id="inputX" value="40">
                     </div>
-                    <div class="form-fila" id="filaPorcentaje">
+                    <div class="form-grupo-row" id="filaPorcentaje">
                         <label id="labelPorcentaje">Porcentaje de Éxito Requerido (%):</label>
                         <input type="number" id="inputPorcentaje" value="80" min="1" max="99">
                     </div>
@@ -530,7 +566,19 @@
                     Nodos</button>
                 <button class="tab-btn" id="btnCPM" onclick="cambiarVista('cpm')">Red de Actividades (4
                     Cuadrantes)</button>
+                <button class="tab-btn" id="btnGantt" onclick="cambiarVista('gantt')">Diagrama de Gantt y
+                    Holguras</button>
             </div>
+
+            <div id="controlesGanttCont" class="gantt-controls hidden">
+                <span>🔧 Parámetros de Gantt:</span>
+                <label><input type="radio" name="ganttBase" value="ES" checked onchange="dibujar()"> Programación
+                    Temprana (ES)</label>
+                <label><input type="radio" name="ganttBase" value="LS" onchange="dibujar()"> Programación Tardía
+                    (LS)</label>
+                <label><input type="checkbox" id="ganttOcultarCriticas" onchange="dibujar()"> Ocultar Críticas</label>
+            </div>
+
             <canvas id="canvasRed" width="850" height="550"></canvas>
         </div>
     </div>
@@ -546,7 +594,16 @@
             document.querySelectorAll('#cuerpoTabla tr').forEach(tr => recalcularFila(tr.querySelector('.pert-a')));
             procesarYDibujar();
             actualizarCamposVisibles();
+            actualizarUnidadesTexto();
         });
+
+        function actualizarUnidadesTexto() {
+            const uni = document.getElementById('unidadProyecto').value || "unidades";
+            document.querySelectorAll('.txt-unidad').forEach(el => el.innerText = uni);
+            if (duracionGlobalProyecto > 0) {
+                document.getElementById('duracionProyectoOutput').innerText = `${duracionGlobalProyecto} ${uni}`;
+            }
+        }
 
         function normalCumulativeProbability(z) {
             let sign = 1; if (z < 0) { sign = -1; z = -z; }
@@ -570,7 +627,6 @@
             return z;
         }
 
-        // Manejar la selección visual de los bloques
         function seleccionarCasoBloque(caso) {
             casoSeleccionado = caso;
             document.getElementById('btnCaso1').classList.toggle('active', caso === 'caso1');
@@ -579,14 +635,14 @@
         }
 
         function actualizarCamposVisibles() {
-            document.getElementById('filaPlazo').style.display = 'flex'; // Siempre visible en ambos casos
+            document.getElementById('filaPlazo').style.display = 'flex';
             document.getElementById('filaPorcentaje').style.display = (casoSeleccionado === 'caso1') ? 'none' : 'flex';
             document.getElementById('resultadoDinamico').innerHTML = "";
         }
 
-        // Simulación con textos totalmente limpios sin símbolos de formato caídos ($)
         function calcularEscenarioPersonalizado() {
             const divRes = document.getElementById('resultadoDinamico');
+            const uni = document.getElementById('unidadProyecto').value || "unidades";
             if (varianzaGlobalProyecto <= 0) {
                 divRes.innerHTML = "<span style='color: #e74c3c;'>La varianza es 0. Introduce actividades válidas.</span>";
                 return;
@@ -594,7 +650,6 @@
 
             let sigma = Math.sqrt(varianzaGlobalProyecto);
 
-            // CASO A: Probabilidad con Plazo X Fijo
             if (casoSeleccionado === 'caso1') {
                 let x = parseFloat(document.getElementById('inputX').value);
                 if (isNaN(x)) { divRes.innerHTML = "<span style='color: #e74c3c;'>Ingrese un número de plazo válido.</span>"; return; }
@@ -605,15 +660,13 @@
                 divRes.innerHTML = `
                     <div style="background-color: white; padding: 14px; border-radius: 6px; border: 1px dashed #2980b9; line-height: 1.5;">
                         <span style="color:#2980b9; font-size:1.1em;">📊 <strong>Resultados del Análisis Estadístico:</strong></span><br>
-                        • Plazo Objetivo Evaluado (X) = <strong>${x} semanas</strong><br>
-                        • Duración de la Ruta Crítica (μ) = <strong>${duracionGlobalProyecto} semanas</strong><br>
+                        • Plazo Objetivo Evaluado (X) = <strong>${x} ${uni}</strong><br>
+                        • Duración de la Ruta Crítica (μ) = <strong>${duracionGlobalProyecto} ${uni}</strong><br>
                         • Valor Z Calculado = <span style="color:#2980b9;">${z.toFixed(4)}</span><br>
                         <hr style="border:0; border-top:1px solid #ddd; margin: 8px 0;">
                         • Probabilidad de Terminar a Tiempo = <span style="color:#27ae60; font-size:1.2em;">${prob.toFixed(2)}%</span>
                     </div>`;
             }
-
-            // CASO B: Reducción de Tiempos (Pregunta de Examen)
             else if (casoSeleccionado === 'caso3') {
                 let x = parseFloat(document.getElementById('inputX').value);
                 let porc = parseFloat(document.getElementById('inputPorcentaje').value);
@@ -624,29 +677,26 @@
                 }
 
                 let z = inverseNormalDistribution(porc / 100);
-
-                // Despeje: Nueva media requerida = X - (Z * Desviación Estándar)
                 let nuevaDuracionRutaCritica = x - (z * sigma);
                 let reduccionRequerida = duracionGlobalProyecto - nuevaDuracionRutaCritica;
 
                 let mensajeDestacado = reduccionRequerida > 0
-                    ? `⚠️ La gerencia exige una <strong>REDUCCIÓN DE TIEMPO</strong> de <span style="color:#e74c3c; font-size:1.15em;">${reduccionRequerida.toFixed(2)} semanas</span> en la ruta crítica original.`
-                    : `✅ No es necesario comprimir los tiempos. La red actual cubre la meta holgadamente por ${Math.abs(reduccionRequerida).toFixed(2)} semanas.`;
+                    ? `⚠️ La gerencia exige una <strong>REDUCCIÓN DE TIEMPO</strong> de <span style="color:#e74c3c; font-size:1.15em;">${reduccionRequerida.toFixed(2)} ${uni}</span> en la ruta crítica original.`
+                    : `✅ No es necesario comprimir los tiempos. La red actual cubre la meta holgadamente por ${Math.abs(reduccionRequerida).toFixed(2)} ${uni}.`;
 
                 divRes.innerHTML = `
                     <div style="background-color: white; padding: 14px; border-radius: 6px; border: 2px solid #e67e22; line-height: 1.5;">
                         <span style="color:#e67e22; font-size:1.1em;">🎓 <strong>Solución de Ingeniería Inversa Realizada:</strong></span><br>
-                        • Plazo de Entrega Exigido (X) = <strong>${x} semanas</strong><br>
+                        • Plazo de Entrega Exigido (X) = <strong>${x} ${uni}</strong><br>
                         • Nivel de Confianza Exigido = <strong>${porc}%</strong><br>
                         • Valor Z de Tabla Inversa = <span style="color:#7f8c8d;">${z.toFixed(4)}</span><br>
-                        • La nueva duración máxima que debe tener tu red (μ nuevo) es: <strong>${nuevaDuracionRutaCritica.toFixed(2)} semanas</strong><br>
+                        • La nueva duración máxima que debe tener tu red (μ nuevo) es: <strong>${nuevaDuracionRutaCritica.toFixed(2)} ${uni}</strong><br>
                         <hr style="border: 0; border-top: 1px dashed #e67e22; margin: 10px 0;">
                         ${mensajeDestacado}
                     </div>`;
             }
         }
 
-        // Lógica interna PERT/CPM invariable
         function toggleModoPert() {
             const isPert = document.getElementById('modoPertCheck').checked;
             document.querySelectorAll('.col-pert').forEach(el => el.classList.toggle('hidden', !isPert));
@@ -688,11 +738,21 @@
         }
 
         function eliminarFila(btn) { btn.closest('tr').remove(); }
-        function cambiarVista(vista) { vistaActual = vista; document.getElementById('btnSimple').classList.toggle('active', vista === 'simple'); document.getElementById('btnCPM').classList.toggle('active', vista === 'cpm'); dibujar(); }
+
+        function cambiarVista(vista) {
+            vistaActual = vista;
+            document.getElementById('btnSimple').classList.toggle('active', vista === 'simple');
+            document.getElementById('btnCPM').classList.toggle('active', vista === 'cpm');
+            document.getElementById('btnGantt').classList.toggle('active', vista === 'gantt');
+
+            // Corregido para que concuerde perfectamente con los id's del HTML
+            document.getElementById('controlesGanttCont').classList.toggle('hidden', vista !== 'gantt');
+            dibujar();
+        }
 
         function exportarJSON() {
             const filas = document.querySelectorAll('#cuerpoTabla tr');
-            let data = { modoPert: document.getElementById('modoPertCheck').checked, actividades: [] };
+            let data = { modoPert: document.getElementById('modoPertCheck').checked, unidad: document.getElementById('unidadProyecto').value, actividades: [] };
             filas.forEach(fil => {
                 data.actividades.push({
                     id: fil.querySelector('.act-id').value, prec: fil.querySelector('.act-prec').value,
@@ -713,9 +773,11 @@
                 try {
                     const data = JSON.parse(e.target.result);
                     document.getElementById('modoPertCheck').checked = data.modoPert;
+                    if (data.unidad) { document.getElementById('unidadProyecto').value = data.unidad; }
                     const tbody = document.getElementById('cuerpoTabla'); tbody.innerHTML = "";
                     toggleModoPert();
                     data.actividades.forEach(act => agregarFila(act));
+                    actualizarUnidadesTexto();
                     procesarYDibujar();
                 } catch (err) { alert("Error al cargar JSON."); }
             };
@@ -778,7 +840,7 @@
             duracionGlobalProyecto = nodos["FIN"].ef;
 
             document.getElementById('rutaCriticaOutput').innerText = rutaCritica.join(' -> ');
-            document.getElementById('duracionProyectoOutput').innerText = `${duracionGlobalProyecto} semanas`;
+            actualizarUnidadesTexto();
             document.getElementById('varianzaProyectoOutput').innerText = `${Math.round(varianzaGlobalProyecto * 100) / 100}`;
 
             calcularEscenarioPersonalizado();
@@ -839,6 +901,12 @@
         function dibujar() {
             const canvas = document.getElementById('canvasRed'); const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (vistaActual === 'gantt') {
+                dibujarDiagramaGantt(ctx, canvas);
+                return;
+            }
+
             for (let id in nodos) {
                 let nOrigen = nodos[id];
                 nOrigen.sucesores.forEach(sucId => {
@@ -871,7 +939,7 @@
                     ctx.fillStyle = '#000000'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(n.id, n.x, n.y - 5);
                     ctx.font = '10px Arial'; ctx.fillText(`t=${n.duracion}`, n.x, n.y + 11);
                 } else {
-                    let w = 75, h = 50; ctx.fillRect(n.x - w / 2, n.y - h / 2, w, h); ctx.strokeRect(n.x - w / 2, n.y - h / 2, w, h);
+                    let w = 75, h = 50; ctx.fillRect(n.x - w / 2, n.y - h / 2, w / 2, h / 2); ctx.strokeRect(n.x - w / 2, n.y - h / 2, w, h);
                     ctx.beginPath(); ctx.moveTo(n.x - w / 2, n.y); ctx.lineTo(n.x + w / 2, n.y); ctx.moveTo(n.x, n.y - h / 2); ctx.lineTo(n.x, n.y + h / 2); ctx.stroke();
                     ctx.fillStyle = '#000'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
                     let format = num => Number(num.toFixed(1));
@@ -880,6 +948,101 @@
                     ctx.fillStyle = esCritico ? '#e74c3c' : '#2c3e50'; ctx.font = 'bold 14px Arial'; ctx.fillText(n.id, n.x, n.y - h / 2 - 10);
                 }
             }
+        }
+
+        // MOTOR RENDERIZADOR DEL DIAGRAMA DE GANTT Y HOLGURAS
+        function dibujarDiagramaGantt(ctx, canvas) {
+            const baseGantt = document.querySelector('input[name="ganttBase"]:checked').value;
+            const ocultarCriticas = document.getElementById('ganttOcultarCriticas').checked;
+            const uni = document.getElementById('unidadProyecto').value || "unidades";
+
+            let listaActividades = [];
+            for (let id in nodos) {
+                let n = nodos[id];
+                if (n.id === 'INICIO' || n.id === 'FIN' || n.esDummy) continue;
+                let esCritica = Math.abs(n.holgura) < 0.01;
+                if (ocultarCriticas && esCritica) continue;
+                listaActividades.push(n);
+            }
+            listaActividades.sort((a, b) => a.id.localeCompare(b.id));
+
+            if (listaActividades.length === 0) {
+                ctx.fillStyle = "#7f8c8d"; ctx.font = "16px Arial"; ctx.textAlign = "center";
+                ctx.fillText("No hay actividades para mostrar en este filtro.", canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+            const margenIzquierdo = 70; const margenSuperior = 60;
+            const anchoGrafico = canvas.width - margenIzquierdo - 50;
+            const altoGrafico = canvas.height - margenSuperior - 60;
+            const totalTiempo = Math.max(duracionGlobalProyecto, 1);
+            const escalaX = anchoGrafico / totalTiempo;
+            const altoBarra = Math.min(altoGrafico / listaActividades.length, 30);
+            const gapBarra = altoBarra * 0.3;
+
+            // Dibujar Cuadrícula y Escala Temporal del Eje X
+            ctx.strokeStyle = "#e5e7e9"; ctx.lineWidth = 1;
+            ctx.fillStyle = "#7f8c8d"; ctx.font = "11px Arial"; ctx.textAlign = "center";
+
+            // Paso fijo de 1 en 1 (0, 1, 2, 3...) en la línea de tiempo
+            let pasoEje = 1;
+            for (let t = 0; t <= totalTiempo; t += pasoEje) {
+                let posX = margenIzquierdo + (t * escalaX);
+                ctx.beginPath(); ctx.moveTo(posX, margenSuperior); ctx.lineTo(posX, margenSuperior + altoGrafico); ctx.stroke();
+                ctx.fillText(`${t}`, posX, margenSuperior - 10);
+                ctx.fillText(`${t}`, posX, margenSuperior + altoGrafico + 20);
+            }
+
+            // Título de Unidad en el Eje X
+            ctx.fillStyle = "#34495e"; ctx.font = "bold 12px Arial"; ctx.textAlign = "right";
+            ctx.fillText(`Línea de tiempo (${uni}) ➔`, canvas.width - 40, margenSuperior + altoGrafico + 45);
+
+            // Dibujar cada barra de actividad
+            listaActividades.forEach((n, idx) => {
+                let posY = margenSuperior + (idx * altoBarra) + gapBarra;
+                let hBarra = altoBarra - gapBarra;
+                let esCritica = Math.abs(n.holgura) < 0.01;
+
+                let tInicio = (baseGantt === 'ES') ? n.es : n.ls;
+                let xInicio = margenIzquierdo + (tInicio * escalaX);
+                let xTrabajoAncho = n.duracion * escalaX;
+
+                // Dibujar Etiqueta de Actividad (Eje Y)
+                ctx.fillStyle = "#2c3e50"; ctx.font = "bold 13px Arial"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+                ctx.fillText(n.id, 25, posY + hBarra / 2);
+
+                // 1. Dibujar Barra de Trabajo Real
+                ctx.fillStyle = esCritica ? "#e74c3c" : "#3498db";
+                ctx.fillRect(xInicio, posY, xTrabajoAncho, hBarra);
+                ctx.strokeStyle = esCritica ? "#922b21" : "#2471a3";
+                ctx.strokeRect(xInicio, posY, xTrabajoAncho, hBarra);
+
+                // 2. Dibujar Tramo de Holgura
+                if (!esCritica && n.holgura > 0) {
+                    let tHolguraInicio = (baseGantt === 'ES') ? n.ef : n.lf - n.holgura;
+                    let xHolguraInicio = margenIzquierdo + (tHolguraInicio * escalaX);
+                    let xHolguraAncho = n.holgura * escalaX;
+
+                    ctx.fillStyle = "rgba(230, 126, 34, 0.2)";
+                    ctx.fillRect(xHolguraInicio, posY, xHolguraAncho, hBarra);
+
+                    ctx.strokeStyle = "#e67e22"; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+                    ctx.strokeRect(xHolguraInicio, posY, xHolguraAncho, hBarra);
+                    ctx.setLineDash([]);
+
+                    ctx.fillStyle = "#d35400"; ctx.font = "10px Arial"; ctx.textAlign = "center";
+                    ctx.fillText(`+${Number(n.holgura.toFixed(1))}`, xHolguraInicio + (xHolguraAncho / 2), posY + hBarra / 2);
+                }
+
+                // Identificador interno de duración
+                ctx.fillStyle = "#ffffff"; ctx.font = "bold 11px Arial"; ctx.textAlign = "center";
+                if (xTrabajoAncho > 25) {
+                    ctx.fillText(`t=${n.duracion}`, xInicio + (xTrabajoAncho / 2), posY + hBarra / 2);
+                } else {
+                    ctx.fillStyle = "#000"; ctx.textAlign = "left";
+                    ctx.fillText(`t=${n.duracion}`, xInicio + xTrabajoAncho + 5, posY + hBarra / 2);
+                }
+            });
         }
     </script>
 </body>
