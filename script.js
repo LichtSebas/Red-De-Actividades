@@ -4,10 +4,85 @@ let nodos = {};
 let duracionGlobalProyecto = 0;
 let varianzaGlobalProyecto = 0;
 
+// --- Drag & Drop en Canvas ---
+let draggingNode = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+function initCanvasDrag() {
+    const canvas = document.getElementById('canvasRed');
+    canvas.addEventListener('mousedown', onCanvasMouseDown);
+    canvas.addEventListener('mousemove', onCanvasMouseMove);
+    canvas.addEventListener('mouseup',   onCanvasMouseUp);
+    canvas.addEventListener('mouseleave', onCanvasMouseUp);
+    canvas.addEventListener('dblclick', onCanvasDblClick);
+}
+
+function getCanvasPos(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width  / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+}
+
+function hitTest(n, px, py) {
+    if (n.esDummy) return Math.hypot(n.x - px, n.y - py) < 16;
+    if (vistaActual === 'simple') return Math.hypot(n.x - px, n.y - py) < 30;
+    return Math.abs(n.x - px) < 40 && Math.abs(n.y - py) < 28;
+}
+
+function onCanvasMouseDown(e) {
+    const canvas = document.getElementById('canvasRed');
+    const p = getCanvasPos(canvas, e);
+    for (let id in nodos) {
+        if (hitTest(nodos[id], p.x, p.y)) {
+            draggingNode = nodos[id];
+            dragOffsetX = p.x - nodos[id].x;
+            dragOffsetY = p.y - nodos[id].y;
+            canvas.style.cursor = 'grabbing';
+            break;
+        }
+    }
+}
+
+function onCanvasMouseMove(e) {
+    const canvas = document.getElementById('canvasRed');
+    const p = getCanvasPos(canvas, e);
+    if (draggingNode) {
+        draggingNode.x = p.x - dragOffsetX;
+        draggingNode.y = p.y - dragOffsetY;
+        draggingNode.esManual = true;
+        dibujar();
+    } else {
+        let over = false;
+        for (let id in nodos) { if (hitTest(nodos[id], p.x, p.y)) { over = true; break; } }
+        canvas.style.cursor = over ? 'grab' : 'default';
+    }
+}
+
+function onCanvasMouseUp() {
+    draggingNode = null;
+    document.getElementById('canvasRed').style.cursor = 'default';
+}
+
+function onCanvasDblClick(e) {
+    const canvas = document.getElementById('canvasRed');
+    const p = getCanvasPos(canvas, e);
+    for (let id in nodos) {
+        if (hitTest(nodos[id], p.x, p.y)) {
+            nodos[id].esManual = false;
+            calcularNivelesYPosicionesOptimizadas();
+            dibujar();
+            break;
+        }
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll('#cuerpoTabla tr').forEach(tr => recalcularFila(tr.querySelector('.pert-a')));
     procesarYDibujar();
     actualizarCamposVisibles();
+    initCanvasDrag();
 });
 
 function normalCumulativeProbability(z) {
@@ -158,44 +233,178 @@ function cambiarVista(vista) {
     document.getElementById('btnGantt').classList.toggle('active', vista === 'gantt');
 
     // Control de visibilidad
-    document.getElementById('canvasRed').style.display = (vista === 'gantt') ? 'none' : 'block';
-    document.getElementById('containerGantt').classList.toggle('hidden', vista !== 'gantt');
+    const isGantt = vista === 'gantt';
+    document.getElementById('canvasRed').style.display = isGantt ? 'none' : 'block';
+    document.getElementById('containerGantt').classList.toggle('hidden', !isGantt);
+    document.getElementById('canvasHint').style.display = isGantt ? 'none' : 'block';
 
-    if (vista === 'gantt') {
+    if (isGantt) {
         dibujarGantt();
     } else {
         dibujar();
     }
 }
 
-// 2. Agrega esta nueva función para generar el Gantt
+// 2. Gráfico de Gantt Profesional
 function dibujarGantt() {
     const container = document.getElementById('containerGantt');
-    container.innerHTML = "";
+    container.innerHTML = '';
 
-    // Ordenamos nodos por tiempo de inicio (ES)
-    let listaNodos = Object.values(nodos).filter(n => n.id !== "INICIO" && n.id !== "FIN" && !n.esDummy);
-    listaNodos.sort((a, b) => a.es - b.es);
+    let listaNodos = Object.values(nodos).filter(n => n.id !== 'INICIO' && n.id !== 'FIN' && !n.esDummy);
+    if (listaNodos.length === 0) {
+        container.innerHTML = '<p style="padding:20px;color:#999;">Calcula la red primero.</p>';
+        return;
+    }
+    listaNodos.sort((a, b) => a.es - b.es || a.id.localeCompare(b.id));
 
-    listaNodos.forEach(n => {
-        let row = document.createElement('div');
-        row.className = 'gantt-row';
+    const totalTime = duracionGlobalProyecto || 1;
+    const PX_PER_UNIT = 28; // píxeles por unidad de tiempo
+    const LABEL_W = 110;
+    const ROW_H = 38;
+    const HEADER_H = 40;
+    const chartW = totalTime * PX_PER_UNIT;
 
-        let label = document.createElement('div');
-        label.className = 'gantt-label';
-        label.innerText = `Act ${n.id}`;
+    // --- Wrapper ---
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `overflow-x:auto; padding:16px 20px; font-family:'Segoe UI',sans-serif;`;
 
-        let bar = document.createElement('div');
-        bar.className = 'gantt-bar';
-        // Multiplicamos por 20px para que cada unidad de tiempo sea visualmente clara
-        bar.style.width = (n.duracion * 20) + 'px';
-        bar.style.marginLeft = (n.es * 20) + 'px';
-        bar.style.backgroundColor = (Math.abs(n.holgura) < 0.01) ? '#e74c3c' : '#3498db';
+    // --- Título ---
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:15px;font-weight:700;color:#2c3e50;margin-bottom:14px;letter-spacing:.4px;';
+    title.innerHTML = '📅 Gráfico de Gantt &nbsp;<span style="font-size:12px;font-weight:normal;color:#7f8c8d;">— Arrastre las barras para explorar. Rojo = Ruta Crítica · Azul = Holgura disponible</span>';
+    wrapper.appendChild(title);
 
-        row.appendChild(label);
-        row.appendChild(bar);
-        container.appendChild(row);
+    // --- Leyenda ---
+    const legend = document.createElement('div');
+    legend.style.cssText = 'display:flex;gap:18px;margin-bottom:12px;font-size:12px;';
+    legend.innerHTML = `
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:14px;background:#e74c3c;border-radius:3px;display:inline-block;"></span>Actividad crítica</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:14px;background:#3498db;border-radius:3px;display:inline-block;"></span>Actividad no crítica</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:14px;background:repeating-linear-gradient(45deg,#aed6f1,#aed6f1 3px,transparent 3px,transparent 7px);border-radius:3px;display:inline-block;"></span>Holgura total</span>
+    `;
+    wrapper.appendChild(legend);
+
+    // --- Contenedor del Gantt (label + chart) ---
+    const ganttWrap = document.createElement('div');
+    ganttWrap.style.cssText = `display:flex; width:${LABEL_W + chartW + 40}px;`;
+
+    // Columna de etiquetas
+    const labelCol = document.createElement('div');
+    labelCol.style.cssText = `width:${LABEL_W}px; flex-shrink:0; padding-top:${HEADER_H}px;`;
+
+    // Columna del chart
+    const chartCol = document.createElement('div');
+    chartCol.style.cssText = `position:relative; width:${chartW + 20}px; flex-shrink:0;`;
+
+    // --- Cabecera de escala de tiempo ---
+    const scaleEl = document.createElement('div');
+    scaleEl.style.cssText = `position:relative; height:${HEADER_H}px; border-bottom:2px solid #2c3e50; margin-bottom:0;`;
+    const tickCount = Math.min(totalTime, 30);
+    const tickStep = Math.ceil(totalTime / tickCount);
+    for (let t = 0; t <= totalTime; t += tickStep) {
+        const tick = document.createElement('div');
+        tick.style.cssText = `position:absolute; left:${t * PX_PER_UNIT}px; top:0; text-align:center; transform:translateX(-50%);`;
+        tick.innerHTML = `<div style="height:8px;width:1px;background:#2c3e50;margin:auto;"></div><div style="font-size:10px;color:#555;margin-top:2px;">${t}</div>`;
+        scaleEl.appendChild(tick);
+    }
+    chartCol.appendChild(scaleEl);
+
+    // --- Líneas de grid verticales ---
+    const grid = document.createElement('div');
+    grid.style.cssText = `position:absolute; top:${HEADER_H}px; left:0; width:100%; height:${listaNodos.length * ROW_H}px; pointer-events:none;`;
+    for (let t = 0; t <= totalTime; t += tickStep) {
+        const vLine = document.createElement('div');
+        vLine.style.cssText = `position:absolute; left:${t * PX_PER_UNIT}px; top:0; bottom:0; width:1px; background:rgba(0,0,0,0.06);`;
+        grid.appendChild(vLine);
+    }
+    chartCol.appendChild(grid);
+
+    // --- Filas del Gantt ---
+    listaNodos.forEach((n, i) => {
+        const isCritical = Math.abs(n.holgura) < 0.01;
+        const barColor  = isCritical ? '#e74c3c' : '#3498db';
+        const barColorD = isCritical ? '#c0392b' : '#2980b9';
+
+        // Label
+        const lbl = document.createElement('div');
+        lbl.style.cssText = `height:${ROW_H}px; display:flex; align-items:center; padding-right:10px; font-size:13px; font-weight:600; color:${isCritical ? '#c0392b' : '#2c3e50'}; border-bottom:1px solid #f0f0f0;`;
+        lbl.textContent = `Act. ${n.id}`;
+        labelCol.appendChild(lbl);
+
+        // Row en el chart
+        const rowEl = document.createElement('div');
+        rowEl.style.cssText = `position:relative; height:${ROW_H}px; border-bottom:1px solid #f0f0f0;`;
+
+        // Holgura (background stripe)
+        if (n.holgura > 0.01) {
+            const slack = document.createElement('div');
+            slack.style.cssText = `
+                position:absolute;
+                left:${n.ef * PX_PER_UNIT}px;
+                top:50%; transform:translateY(-50%);
+                width:${n.holgura * PX_PER_UNIT}px;
+                height:16px;
+                background:repeating-linear-gradient(45deg,#aed6f1,#aed6f1 3px,transparent 3px,transparent 8px);
+                border-radius:3px;
+                opacity:0.7;
+            `;
+            slack.title = `Holgura total: ${n.holgura.toFixed(1)} u.t.`;
+            rowEl.appendChild(slack);
+        }
+
+        // Barra principal
+        const bar = document.createElement('div');
+        const barW = Math.max(n.duracion * PX_PER_UNIT, 8);
+        bar.style.cssText = `
+            position:absolute;
+            left:${n.es * PX_PER_UNIT}px;
+            top:50%; transform:translateY(-50%) scaleX(0);
+            transform-origin: left center;
+            width:${barW}px;
+            height:22px;
+            background: linear-gradient(90deg, ${barColor}, ${barColorD});
+            border-radius:4px;
+            box-shadow: 0 2px 6px ${barColor}55;
+            display:flex; align-items:center; justify-content:center;
+            cursor:default;
+            transition: box-shadow .2s;
+        `;
+
+        // Texto dentro de la barra
+        const barLabel = document.createElement('span');
+        barLabel.style.cssText = `color:white; font-size:11px; font-weight:700; pointer-events:none; white-space:nowrap; overflow:hidden; padding:0 4px;`;
+        barLabel.textContent = barW > 30 ? `${n.duracion} u.t.` : '';
+        bar.appendChild(barLabel);
+
+        // Tooltip
+        bar.title = `Actividad ${n.id}\nInicio: ${n.es} | Fin: ${n.ef}\nDuración: ${n.duracion}\nHolgura: ${n.holgura.toFixed(2)}\n${isCritical ? '⚠ Ruta Crítica' : ''}`;
+
+        bar.addEventListener('mouseenter', () => { bar.style.boxShadow = `0 4px 14px ${barColor}88`; bar.style.filter = 'brightness(1.1)'; });
+        bar.addEventListener('mouseleave', () => { bar.style.boxShadow = `0 2px 6px ${barColor}55`; bar.style.filter = ''; });
+
+        rowEl.appendChild(bar);
+        chartCol.appendChild(rowEl);
+
+        // Animación de entrada escalonada
+        setTimeout(() => {
+            bar.style.transform = 'translateY(-50%) scaleX(1)';
+            bar.style.transitionProperty = 'transform, box-shadow, filter';
+            bar.style.transitionDuration = '0.4s';
+            bar.style.transitionTimingFunction = 'cubic-bezier(0.34,1.4,0.64,1)';
+        }, 60 + i * 55);
     });
+
+    ganttWrap.appendChild(labelCol);
+    ganttWrap.appendChild(chartCol);
+    wrapper.appendChild(ganttWrap);
+
+    // --- Línea de hoy / progreso (decorativa) ---
+    const nowLine = document.createElement('div');
+    nowLine.style.cssText = `margin-top:10px; font-size:11px; color:#95a5a6; padding-left:${LABEL_W}px;`;
+    nowLine.textContent = `Escala: 1 unidad = 1 columna · Duración total del proyecto: ${totalTime} unidades de tiempo`;
+    wrapper.appendChild(nowLine);
+
+    container.appendChild(wrapper);
 }
 function exportarJSON() {
     const filas = document.querySelectorAll('#cuerpoTabla tr');
@@ -339,7 +548,12 @@ function calcularNivelesYPosicionesOptimizadas() {
     const canvas = document.getElementById('canvasRed'); const anchoCapa = canvas.width / (totalCapas + 0.1);
     for (let nv in capas) {
         let nodosEnCapa = capas[nv]; let altoSeccion = canvas.height / (nodosEnCapa.length + 1);
-        nodosEnCapa.forEach((id, index) => { nodos[id].x = (parseInt(nv) + 0.5) * anchoCapa; nodos[id].y = (index + 1) * altoSeccion; });
+        nodosEnCapa.forEach((id, index) => {
+            // Si el nodo fue arrastrado manualmente, conservar su posición
+            if (nodos[id].esManual) return;
+            nodos[id].x = (parseInt(nv) + 0.5) * anchoCapa;
+            nodos[id].y = (index + 1) * altoSeccion;
+        });
     }
 }
 
@@ -374,9 +588,15 @@ function dibujar() {
         }
         ctx.lineWidth = esCritico ? 3 : 1.5; ctx.strokeStyle = esCritico ? '#e74c3c' : '#2c3e50'; ctx.fillStyle = '#ffffff';
         if (vistaActual === 'simple') {
-            ctx.beginPath(); ctx.arc(n.x, n.y, 28, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
-            ctx.fillStyle = '#000000'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(n.id, n.x, n.y - 5);
-            ctx.font = '10px Arial'; ctx.fillText(`t=${n.duracion}`, n.x, n.y + 11);
+            ctx.beginPath(); ctx.arc(n.x, n.y, 30, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#000000'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(n.id, n.x, n.y - 11);
+            ctx.font = '9px Arial';
+            ctx.fillStyle = '#555';
+            ctx.fillText(`t=${n.duracion}`, n.x, n.y + 2);
+            ctx.fillStyle = esCritico ? '#e74c3c' : '#3498db';
+            ctx.font = 'bold 9px Arial';
+            ctx.fillText(`H=${Number(n.holgura.toFixed(1))}`, n.x, n.y + 14);
         } else {
             let w = 75, h = 50; ctx.fillRect(n.x - w / 2, n.y - h / 2, w, h); ctx.strokeRect(n.x - w / 2, n.y - h / 2, w, h);
             ctx.beginPath(); ctx.moveTo(n.x - w / 2, n.y); ctx.lineTo(n.x + w / 2, n.y); ctx.moveTo(n.x, n.y - h / 2); ctx.lineTo(n.x, n.y + h / 2); ctx.stroke();
@@ -385,6 +605,11 @@ function dibujar() {
             ctx.fillText(format(n.es), n.x - w / 4, n.y - h / 4); ctx.fillText(format(n.ef), n.x + w / 4, n.y - h / 4);
             ctx.fillText(format(n.ls), n.x - w / 4, n.y + h / 4); ctx.fillText(format(n.lf), n.x + w / 4, n.y + h / 4);
             ctx.fillStyle = esCritico ? '#e74c3c' : '#2c3e50'; ctx.font = 'bold 14px Arial'; ctx.fillText(n.id, n.x, n.y - h / 2 - 10);
+            
+            // Dibujar la Holgura debajo del nodo en la Red de Actividades (CPM)
+            ctx.fillStyle = esCritico ? '#e74c3c' : '#3498db';
+            ctx.font = 'bold 10px Arial';
+            ctx.fillText(`H: ${format(n.holgura)}`, n.x, n.y + h / 2 + 11);
         }
     }
 }
