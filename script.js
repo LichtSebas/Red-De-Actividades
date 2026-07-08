@@ -408,24 +408,77 @@ function dibujarCurvaCostoTiempo() {
     const durSpan = Math.max(1, maxDur - minDur);
     const costSpan = Math.max(1, maxCost - minCost);
 
+    const puntosCurva = datosCurvaCostoTiempo.map(p => {
+        const x = padding.left + ((p.duracion - minDur) / durSpan) * width;
+        const y = padding.top + height - ((p.costo - minCost) / costSpan) * height;
+        return { ...p, x, y };
+    });
+
+    const xLabelStep = Math.max(1, Math.round(puntosCurva.length / 8));
+    const xTicks = puntosCurva.filter((item, index) => index % xLabelStep === 0 || index === puntosCurva.length - 1);
+
+    const valoresCostos = Array.from(new Set(puntosCurva.map(p => Math.round(p.costo)))).sort((a, b) => a - b);
+    const yLabelCount = Math.min(6, valoresCostos.length);
+    const yLabelStep = Math.max(1, Math.floor(valoresCostos.length / yLabelCount));
+    const valoresY = [];
+    for (let i = 0; i < valoresCostos.length; i += yLabelStep) {
+        valoresY.push(valoresCostos[i]);
+    }
+    if (valoresY[valoresY.length - 1] !== valoresCostos[valoresCostos.length - 1]) {
+        valoresY.push(valoresCostos[valoresCostos.length - 1]);
+    }
+    const yTicks = valoresY
+        .map(value => puntosCurva.find(p => Math.round(p.costo) === value))
+        .filter(Boolean);
+
     ctx.strokeStyle = '#d6dde8';
     ctx.lineWidth = 1;
-    for (let i = 0; i <= 4; i++) {
-        const y = padding.top + (height / 4) * i;
+    ctx.setLineDash([4, 4]);
+    yTicks.forEach(item => {
         ctx.beginPath();
-        ctx.moveTo(padding.left, y);
-        ctx.lineTo(canvas.width - padding.right, y);
+        ctx.moveTo(padding.left, item.y);
+        ctx.lineTo(canvas.width - padding.right, item.y);
         ctx.stroke();
-    }
+    });
+    xTicks.forEach(item => {
+        ctx.beginPath();
+        ctx.moveTo(item.x, padding.top);
+        ctx.lineTo(item.x, padding.top + height);
+        ctx.stroke();
+    });
+    ctx.setLineDash([]);
 
     ctx.strokeStyle = '#2c3e50';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
+    ctx.moveTo(padding.left, padding.top);
+    ctx.lineTo(padding.left, padding.top + height);
     ctx.moveTo(padding.left, padding.top + height);
-    ctx.lineTo(padding.left, padding.top);
-    ctx.lineTo(canvas.width - padding.right, padding.top);
+    ctx.lineTo(canvas.width - padding.right, padding.top + height);
     ctx.stroke();
 
     ctx.fillStyle = '#2c3e50';
+    ctx.font = '11px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    xTicks.forEach(item => {
+        ctx.beginPath();
+        ctx.moveTo(item.x, padding.top + height);
+        ctx.lineTo(item.x, padding.top + height + 6);
+        ctx.stroke();
+        ctx.fillText(`${item.duracion.toFixed(0)} ${getUnidadTiempoAbrev()}`, item.x, padding.top + height + 18);
+    });
+
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    yTicks.forEach(item => {
+        ctx.beginPath();
+        ctx.moveTo(padding.left - 6, item.y);
+        ctx.lineTo(padding.left, item.y);
+        ctx.stroke();
+        ctx.fillText(`${getSimboloMoneda()}${Math.round(item.costo).toLocaleString()}`, padding.left - 10, item.y);
+    });
+
     ctx.font = '12px Segoe UI';
     ctx.textAlign = 'center';
     ctx.fillText(`Duración (${getUnidadTiempoNombre()})`, canvas.width / 2, canvas.height - 18);
@@ -435,28 +488,32 @@ function dibujarCurvaCostoTiempo() {
     ctx.fillText('Costo acumulado', 0, 0);
     ctx.restore();
 
-    ctx.beginPath();
-    datosCurvaCostoTiempo.forEach((p, index) => {
-        const x = padding.left + ((p.duracion - minDur) / durSpan) * width;
-        const y = padding.top + height - ((p.costo - minCost) / costSpan) * height;
-        if (index === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-    });
-    ctx.strokeStyle = '#3498db';
-    ctx.lineWidth = 3;
-    ctx.stroke();
+    if (datosCurvaCostoTiempo.length >= 2) {
+        ctx.strokeStyle = '#2980b9';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        datosCurvaCostoTiempo.forEach((p, index) => {
+            const x = padding.left + ((p.duracion - minDur) / durSpan) * width;
+            const y = padding.top + height - ((p.costo - minCost) / costSpan) * height;
+            if (index === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        ctx.stroke();
+    }
 
     datosCurvaCostoTiempo.forEach((p, index) => {
         const x = padding.left + ((p.duracion - minDur) / durSpan) * width;
         const y = padding.top + height - ((p.costo - minCost) / costSpan) * height;
         ctx.beginPath();
-        ctx.arc(x, y, 4.5, 0, Math.PI * 2);
-        ctx.fillStyle = index === 0 ? '#e74c3c' : '#27ae60';
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = index === 0 ? '#e74c3c' : '#2980b9';
         ctx.fill();
-        ctx.fillStyle = '#2c3e50';
-        ctx.font = '11px Segoe UI';
-        ctx.textAlign = index === 0 ? 'right' : 'left';
-        ctx.fillText(`${p.duracion.toFixed(1)} ${getUnidadTiempoAbrev()}`, x + 8, y - 8);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
     });
 
     ctx.fillStyle = '#34495e';
@@ -852,7 +909,7 @@ function dibujar() {
     let dibujarNodos = nodos;
     let pasosPrevios = [];
     let pasosActuales = [];
-    if ((vistaActual === 'cpm' || vistaActual === 'capas') && capasPasos.length) {
+    if (vistaActual === 'capas' && capasPasos.length) {
         const paso = capasPasos[Math.max(0, Math.min(currentPasoIndex, capasPasos.length - 1))];
         pasosActuales = paso.actividades.map(a => a.act);
         pasosPrevios = capasPasos.slice(0, currentPasoIndex).flatMap(g => g.actividades.map(a => a.act));
@@ -910,7 +967,7 @@ function dibujar() {
             let format = num => Number(num.toFixed(1));
             ctx.fillText(format(n.es), n.x - w / 4, n.y - h / 4); ctx.fillText(format(n.ef), n.x + w / 4, n.y - h / 4);
             ctx.fillText(format(n.ls), n.x - w / 4, n.y + h / 4); ctx.fillText(format(n.lf), n.x + w / 4, n.y + h / 4);
-            ctx.fillStyle = isActiveStep ? '#0f834b' : isDoneStep ? '#8209b9' : (esCritico ? '#e74c3c' : '#2c3e50'); ctx.font = 'bold 14px Arial'; ctx.fillText(n.id, n.x, n.y - h / 2 - 10);
+            ctx.fillStyle = isActiveStep ? '#52c58d' : isDoneStep ? '#a12bd8' : (esCritico ? '#e74c3c' : '#2c3e50'); ctx.font = 'bold 14px Arial'; ctx.fillText(n.id, n.x, n.y - h / 2 - 10);
             
             // Dibujar la Holgura debajo del nodo en la Red de Actividades (CPM)
             ctx.fillStyle = esCritico ? '#e74c3c' : '#3498db';
@@ -1134,6 +1191,13 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj, reducirMaximo 
     let redUsada = {};
     actBase.forEach(a => { durMap[a.id] = a.tNormal; redUsada[a.id] = 0; });
 
+    const rutaCriticaOriginal = new Set(actBase.filter(a => a.esCritica).map(a => a.id));
+    const preservaRutaCriticaOriginal = (id) => {
+        const durMapSim = { ...durMap, [id]: durMap[id] - 1 };
+        const { criticas: criticasSim } = calcularDuracionRed(actBase, durMapSim);
+        return [...rutaCriticaOriginal].every(origId => criticasSim.has(origId));
+    };
+
     let costoAcum = 0;
     let pasos = [];
     let durActual = durInicial;
@@ -1145,11 +1209,11 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj, reducirMaximo 
     while (durActual > plazoFinal && iter++ < MAX) {
         const { criticas } = calcularDuracionRed(actBase, durMap);
         const candidatas = actBase
-            .filter(a => criticas.has(a.id) && redUsada[a.id] < a.redMax && a.costoPorDia < Infinity)
+            .filter(a => criticas.has(a.id) && redUsada[a.id] < a.redMax && a.costoPorDia < Infinity && preservaRutaCriticaOriginal(a.id))
             .sort((a, b) => a.costoPorDia - b.costoPorDia);
 
         if (candidatas.length === 0) {
-            pasos.push({ tipo: 'limite', msg: 'No quedan actividades críticas comprimibles. Se alcanzó el límite de reducción.' });
+            pasos.push({ tipo: 'limite', msg: 'No quedan actividades críticas comprimibles que preserven la ruta crítica original. Se alcanzó el límite de reducción.' });
             break;
         }
 
@@ -1287,3 +1351,115 @@ function cambiarPasoCapas(delta) {
 }
 
 function toggleTiemposDeRed() { procesarYDibujar(); }
+
+function exportarBlob(blob, nombreArchivo) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = nombreArchivo;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+function exportarCanvasAsPNG(canvas, nombreArchivo) {
+    canvas.toBlob(blob => {
+        if (!blob) return;
+        exportarBlob(blob, nombreArchivo);
+    }, 'image/png');
+}
+
+function getJsPDFConstructor() {
+    if (window.jspdf && typeof window.jspdf.jsPDF === 'function') return window.jspdf.jsPDF;
+    if (typeof window.jsPDF === 'function') return window.jsPDF;
+    if (window.jspdf && typeof window.jspdf === 'function') return window.jspdf;
+    return null;
+}
+
+function exportarCanvasAsPDF(canvas, nombreArchivo) {
+    const pdfConstructor = getJsPDFConstructor();
+    if (!pdfConstructor) {
+        alert('No se pudo generar el PDF porque jsPDF no está disponible.');
+        return;
+    }
+    const w = Math.min(canvas.width, 14400);
+    const h = Math.min(canvas.height, 14400);
+    const orientation = w >= h ? 'landscape' : 'portrait';
+    const pdf = new pdfConstructor({ orientation, unit: 'px', format: [w, h] });
+    const dataUrl = canvas.toDataURL('image/png');
+    pdf.addImage(dataUrl, 'PNG', 0, 0, w, h);
+    pdf.save(nombreArchivo);
+}
+
+function exportarContainerComoCanvas(container) {
+    return html2canvas(container, { backgroundColor: '#ffffff', scale: 2 });
+}
+
+function exportarContainerComoPNG(container, nombreArchivo) {
+    exportarContainerComoCanvas(container)
+        .then(canvas => exportarCanvasAsPNG(canvas, nombreArchivo))
+        .catch(err => { console.error('Error exportando Gantt a PNG:', err); alert('Error al exportar Gantt como PNG.'); });
+}
+
+function exportarContainerComoPDF(container, nombreArchivo) {
+    exportarContainerComoCanvas(container)
+        .then(canvas => exportarCanvasAsPDF(canvas, nombreArchivo))
+        .catch(err => { console.error('Error exportando Gantt a PDF:', err); alert('Error al exportar Gantt como PDF.'); });
+}
+
+function exportarVistaActual(formato) {
+    if (vistaActual === 'costo') {
+        const canvas = document.getElementById('canvasCostoTiempo');
+        if (!canvas) return;
+        if (formato === 'png') exportarCanvasAsPNG(canvas, 'curva-costo-tiempo.png');
+        else exportarCanvasAsPDF(canvas, 'curva-costo-tiempo.pdf');
+        return;
+    }
+
+    if (vistaActual === 'gantt') {
+        const container = document.getElementById('containerGantt');
+        if (!container) return;
+        if (formato === 'png') exportarContainerComoPNG(container, 'gantt.png');
+        else exportarContainerComoPDF(container, 'gantt.pdf');
+        return;
+    }
+
+    if (vistaActual === 'capas') {
+        exportarCapas();
+        return;
+    }
+
+    const canvas = document.getElementById('canvasRed');
+    if (!canvas) return;
+    if (formato === 'png') exportarCanvasAsPNG(canvas, 'red-actividades.png');
+    else exportarCanvasAsPDF(canvas, 'red-actividades.pdf');
+}
+
+function exportarCapas() {
+    if (!capasPasos.length) {
+        alert('No hay capas disponibles para exportar. Ejecuta Caso C primero.');
+        return;
+    }
+
+    const zip = new JSZip();
+    const numCapas = capasPasos.length;
+    const originalPaso = currentPasoIndex;
+
+    for (let i = 0; i < numCapas; i++) {
+        currentPasoIndex = i;
+        dibujar();
+        const canvas = document.getElementById('canvasRed');
+        if (!canvas) continue;
+        const dataUrl = canvas.toDataURL('image/png');
+        const base64 = dataUrl.split(',')[1];
+        zip.file(`capa-${String(i + 1).padStart(2, '0')}.png`, base64, { base64: true });
+    }
+
+    currentPasoIndex = originalPaso;
+    dibujar();
+
+    zip.generateAsync({ type: 'blob' }).then(content => {
+        exportarBlob(content, 'red-actividades-capas.zip');
+    });
+}

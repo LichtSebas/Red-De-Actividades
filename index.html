@@ -339,11 +339,15 @@
                     <button class="tab-btn" id="btnGantt" onclick="cambiarVista('gantt')">Gráfico de Gantt</button>
                     <button class="tab-btn" id="btnCosto" onclick="cambiarVista('costo')">Curva Costo-Tiempo</button>
                 </div>
-                <div id="zoomControls" style="display: flex; gap: 5px;">
+                <div id="zoomControls" style="display: flex; gap: 5px; flex-wrap: wrap; align-items: center;">
                     <button class="tab-btn zoom-btn" onclick="ajustarZoom(0.1)" title="Acercar">🔍 Zoom +</button>
                     <button class="tab-btn zoom-btn" onclick="ajustarZoom(-0.1)" title="Alejar">🔍 Zoom -</button>
                     <button class="tab-btn zoom-btn reset-zoom" onclick="resetearZoom()" title="Restablecer" style="background:#7f8c8d; color:white;">Reset Zoom</button>
                 </div>
+            </div>
+            <div class="export-toolbar" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+                <button class="tab-btn export-btn" onclick="exportarVistaActual('png')">📷 Exportar PNG</button>
+                <button class="tab-btn export-btn" onclick="exportarVistaActual('pdf')">📄 Exportar PDF</button>
             </div>
             <div id="canvasTitle" style="font-size:15px;color:#2c3e50;margin-bottom:4px;">Diagrama de Nodos</div>
             <div id="canvasHint" style="font-size:11px;color:#7f8c8d;margin-bottom:4px;">🖱️ <strong>Arrastrar</strong> para mover nodos &nbsp;|&nbsp; <strong>Doble clic</strong> sobre un nodo para resetear su posición</div>
@@ -357,6 +361,9 @@
         </div>
     </div>
 
+    <script src="html2canvas.min.js"></script>
+    <script src="jszip.min.js"></script>
+    <script src="jspdf.umd.min.js"></script>
     <script src="script.js"></script>
 </body>
 
