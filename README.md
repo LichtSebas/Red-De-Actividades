@@ -81,18 +81,27 @@ Este proyecto permite modelar actividades, precedencias y tiempos para calcular 
 
 ## Algoritmos importantes
 
-### Cálculo de CPM
+### Algoritmo utilizado por el programa
 
-- La red se arma con nodos de inicio y fin automáticos.
-- Se calcula `ES`, `EF`, `LS`, `LF` y `Holgura` mediante pasadas de orden topológico.
-- La ruta crítica se identifica con holgura casi cero.
+- El sistema trabaja con un enfoque híbrido de PERT y CPM para evaluar toda la red del proyecto.
+- En modo PERT, cada actividad puede ingresar tres tiempos: optimista `a`, más probable `b` y pesimista `c`.
+- El tiempo esperado de cada actividad se calcula con la fórmula de PERT: `t = (a + 4b + c) / 6`.
+- La varianza de cada actividad se calcula como `((c - a) / 6)^2`.
+- Luego se construye la red del proyecto y se aplican pasadas hacia adelante y hacia atrás para obtener `ES`, `EF`, `LS`, `LF` y holgura.
+- La ruta crítica se identifica con actividades de holgura cero o casi cero.
+- Para la probabilidad de entrega en plazo, el programa usa la distribución normal estadística con el valor `Z`.
 
-### Compresión (Crashing)
+### Reglas de manejo y evaluación del proyecto
 
-- Se analiza el costo adicional por unidad de reducción.
-- Se buscan actividades críticas que puedan comprimirse sin violar su tiempo mínimo.
-- El algoritmo aplica reducciones por unidad hasta alcanzar el plazo objetivo o el límite de compresión.
-- Se genera un plan paso a paso con costo acumulado y duración resultante.
+- El programa evalúa la red completa del proyecto, no una actividad aislada.
+- Cada actividad debe tener un identificador único y precedentes válidos.
+- Las relaciones de precedencia deben formar una red coherente y sin ciclos que impidan calcular el flujo del proyecto.
+- Si el usuario activa el modo PERT, el sistema usa los tres tiempos y calcula automáticamente el tiempo promedio y la varianza.
+- Si el usuario trabaja en modo simple, se usa un único tiempo por actividad.
+- La ruta crítica se recalcula cada vez que cambian los datos, las precedencias o los tiempos.
+- En el caso de compresión, solo se consideran actividades críticas y solo dentro de sus límites técnicos y de costo.
+- El programa detiene la compresión cuando se alcanza el plazo objetivo o cuando ya no es posible reducir más tiempo.
+- Los resultados de duración, ruta crítica, probabilidad y costo se actualizan dinámicamente para reflejar el estado completo del proyecto.
 
 ## Personalización
 
