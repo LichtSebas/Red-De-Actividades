@@ -311,7 +311,10 @@
                     </div>
                 </div>
 
-                <button class="btn-prob" id="btnEjecutarAccion" onclick="ejecutarAccionSimulacion()">Ejecutar Simulación Estadística</button>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                    <button class="btn-prob" id="btnEjecutarAccion" onclick="ejecutarAccionSimulacion()">Ejecutar Simulación Estadística</button>
+                    <button class="btn-prob" id="btnReducirMaximo" onclick="calcularReduccionMaxima()" style="display:none;background:#f39c12;">Reducir lo máximo posible</button>
+                </div>
 
                 <div id="resultadoDinamico"
                     style="margin-top: 15px; font-weight: bold; color: #2c3e50; font-size: 1.05em;"></div>
@@ -324,6 +327,7 @@
                 <div style="display: flex; gap: 5px;">
                     <button class="tab-btn active" id="btnSimple" onclick="cambiarVista('simple')">Diagrama de Nodos</button>
                     <button class="tab-btn" id="btnCPM" onclick="cambiarVista('cpm')">Red de Actividades</button>
+                    <button class="tab-btn" id="btnCapas" onclick="cambiarVista('capas')">Red de Actividades Capas</button>
                     <button class="tab-btn" id="btnGantt" onclick="cambiarVista('gantt')">Gráfico de Gantt</button>
                     <button class="tab-btn" id="btnCosto" onclick="cambiarVista('costo')">Curva Costo-Tiempo</button>
                 </div>
@@ -333,9 +337,11 @@
                     <button class="tab-btn zoom-btn reset-zoom" onclick="resetearZoom()" title="Restablecer" style="background:#7f8c8d; color:white;">Reset Zoom</button>
                 </div>
             </div>
+            <div id="canvasTitle" style="font-size:15px;color:#2c3e50;margin-bottom:4px;">Diagrama de Nodos</div>
             <div id="canvasHint" style="font-size:11px;color:#7f8c8d;margin-bottom:4px;">🖱️ <strong>Arrastrar</strong> para mover nodos &nbsp;|&nbsp; <strong>Doble clic</strong> sobre un nodo para resetear su posición</div>
 
             <canvas id="canvasRed" width="850" height="550"></canvas>
+            <div id="panelCapasPasos" class="hidden" style="padding: 20px; width: 100%;"></div>
             <div id="containerGantt" class="hidden" style="padding: 20px; overflow-x: auto;"></div>
             <div id="containerCostoTiempo" class="hidden" style="padding: 20px; overflow-x: auto;">
                 <canvas id="canvasCostoTiempo" width="850" height="500"></canvas>

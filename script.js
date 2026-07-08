@@ -5,6 +5,8 @@ let duracionGlobalProyecto = 0;
 let varianzaGlobalProyecto = 0;
 let zoomLevel = 1.0;
 let datosCurvaCostoTiempo = [];
+let capasPasos = [];
+let currentPasoIndex = 0;
 
 // --- Funciones de Zoom ---
 function ajustarZoom(delta) {
@@ -173,6 +175,8 @@ function actualizarCamposVisibles() {
     if (btn) btn.textContent = isCasoC
         ? '📊 Calcular costo y disponibilidad de actividades a comprimir'
         : 'Ejecutar Simulación Estadística';
+    const btnMaximo = document.getElementById('btnReducirMaximo');
+    if (btnMaximo) btnMaximo.style.display = isCasoC ? 'inline-flex' : 'none';
     document.getElementById('resultadoDinamico').innerHTML = '';
 }
 
@@ -289,17 +293,32 @@ function cambiarVista(vista) {
     vistaActual = vista;
     document.getElementById('btnSimple').classList.toggle('active', vista === 'simple');
     document.getElementById('btnCPM').classList.toggle('active', vista === 'cpm');
+    document.getElementById('btnCapas').classList.toggle('active', vista === 'capas');
     document.getElementById('btnGantt').classList.toggle('active', vista === 'gantt');
     document.getElementById('btnCosto').classList.toggle('active', vista === 'costo');
 
     const isGantt = vista === 'gantt';
     const isCosto = vista === 'costo';
+    const isCapas = vista === 'capas';
     document.getElementById('canvasRed').style.display = (isGantt || isCosto) ? 'none' : 'block';
     document.getElementById('containerGantt').classList.toggle('hidden', !isGantt);
     document.getElementById('containerCostoTiempo').classList.toggle('hidden', !isCosto);
+    document.getElementById('panelCapasPasos').classList.toggle('hidden', !isCapas);
     document.getElementById('canvasHint').style.display = (isGantt || isCosto) ? 'none' : 'block';
     const zoomEl = document.getElementById('zoomControls');
     if (zoomEl) zoomEl.style.display = (isGantt || isCosto) ? 'none' : 'flex';
+
+    const canvasTitle = document.getElementById('canvasTitle');
+    if (canvasTitle) {
+        if (isCapas) canvasTitle.textContent = 'Red de Actividades Capas';
+        else if (vista === 'cpm') canvasTitle.textContent = 'Red de Actividades';
+        else if (vista === 'simple') canvasTitle.textContent = 'Diagrama de Nodos';
+        else canvasTitle.textContent = '';
+    }
+
+    if (isCapas) {
+        actualizarPanelCapas();
+    }
 
     if (isGantt) {
         dibujarGantt();
@@ -713,6 +732,63 @@ function calcularNivelesYPosicionesOptimizadas() {
     }
 }
 
+function clonarNodosParaPaso(durMap) {
+    const copia = {};
+    for (let id in nodos) {
+        copia[id] = {
+            ...nodos[id],
+            duracion: durMap && durMap[id] !== undefined ? durMap[id] : nodos[id].duracion,
+            es: 0,
+            ef: 0,
+            ls: 0,
+            lf: 0,
+            holgura: 0,
+            nivel: nodos[id].nivel,
+            x: nodos[id].x,
+            y: nodos[id].y,
+            precedentes: [...nodos[id].precedentes],
+            sucesores: [...nodos[id].sucesores]
+        };
+    }
+    return copia;
+}
+
+function calcularRedTemporal(tempNodos) {
+    tempNodos["INICIO"].es = 0;
+    tempNodos["INICIO"].ef = 0;
+    let inDegree = {};
+    for (let id in tempNodos) inDegree[id] = (tempNodos[id].precedentes || []).length;
+    let queue = ["INICIO"];
+    while (queue.length > 0) {
+        const actual = queue.shift();
+        (tempNodos[actual].sucesores || []).forEach(suc => {
+            if (!tempNodos[suc]) return;
+            tempNodos[suc].es = Math.max(tempNodos[suc].es, tempNodos[actual].ef);
+            tempNodos[suc].ef = tempNodos[suc].es + tempNodos[suc].duracion;
+            inDegree[suc]--;
+            if (inDegree[suc] === 0) queue.push(suc);
+        });
+    }
+
+    const durTotal = tempNodos["FIN"] ? tempNodos["FIN"].ef : 0;
+    for (let id in tempNodos) { tempNodos[id].lf = durTotal; tempNodos[id].ls = durTotal; }
+    let outDegree = {};
+    for (let id in tempNodos) outDegree[id] = (tempNodos[id].sucesores || []).length;
+    queue = ["FIN"];
+    while (queue.length > 0) {
+        const actual = queue.shift();
+        (tempNodos[actual].precedentes || []).forEach(prec => {
+            if (!tempNodos[prec]) return;
+            tempNodos[prec].lf = Math.min(tempNodos[prec].lf, tempNodos[actual].ls);
+            tempNodos[prec].ls = tempNodos[prec].lf - tempNodos[prec].duracion;
+            tempNodos[prec].holgura = tempNodos[prec].ls - tempNodos[prec].es;
+            outDegree[prec]--;
+            if (outDegree[prec] === 0) queue.push(prec);
+        });
+    }
+    return { tempNodos, durTotal };
+}
+
 function dibujar() {
     const canvas = document.getElementById('canvasRed'); const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -721,8 +797,19 @@ function dibujar() {
     ctx.translate(panX * zoomLevel, panY * zoomLevel);
     ctx.scale(zoomLevel, zoomLevel);
 
-    for (let id in nodos) {
-        let nOrigen = nodos[id];
+    let dibujarNodos = nodos;
+    let pasosPrevios = [];
+    let pasosActuales = [];
+    if ((vistaActual === 'cpm' || vistaActual === 'capas') && capasPasos.length) {
+        const paso = capasPasos[Math.max(0, Math.min(currentPasoIndex, capasPasos.length - 1))];
+        pasosActuales = paso.actividades.map(a => a.act);
+        pasosPrevios = capasPasos.slice(0, currentPasoIndex).flatMap(g => g.actividades.map(a => a.act));
+        dibujarNodos = clonarNodosParaPaso(paso.durMap);
+        calcularRedTemporal(dibujarNodos);
+    }
+
+    for (let id in dibujarNodos) {
+        let nOrigen = dibujarNodos[id];
         nOrigen.sucesores.forEach(sucId => {
             let nDestino = nodos[sucId]; if (!nDestino) return;
             let esCritico = (Math.abs(nOrigen.holgura) < 0.01 && Math.abs(nDestino.holgura) < 0.01);
@@ -739,8 +826,10 @@ function dibujar() {
             ctx.closePath(); ctx.fill();
         });
     }
-    for (let id in nodos) {
-        let n = nodos[id]; let esCritico = Math.abs(n.holgura) < 0.01;
+    for (let id in dibujarNodos) {
+        let n = dibujarNodos[id]; let esCritico = Math.abs(n.holgura) < 0.01;
+        const isActiveStep = pasosActuales.includes(n.id);
+        const isDoneStep = pasosPrevios.includes(n.id);
         if (n.esDummy) {
             ctx.lineWidth = esCritico ? 2.5 : 1.5; ctx.strokeStyle = esCritico ? '#e74c3c' : '#7f8c8d';
             ctx.fillStyle = '#f2f4f4'; ctx.beginPath(); ctx.arc(n.x, n.y, 14, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
@@ -759,13 +848,17 @@ function dibujar() {
             ctx.font = 'bold 9px Arial';
             ctx.fillText(`H=${Number(n.holgura.toFixed(1))}`, n.x, n.y + 14);
         } else {
-            let w = 75, h = 50; ctx.fillRect(n.x - w / 2, n.y - h / 2, w, h); ctx.strokeRect(n.x - w / 2, n.y - h / 2, w, h);
+            let w = 75, h = 50; 
+            ctx.fillStyle = isActiveStep ? '#e8f8f5' : isDoneStep ? '#eaf2fb' : '#ffffff';
+            ctx.fillRect(n.x - w / 2, n.y - h / 2, w, h); 
+            ctx.strokeStyle = esCritico ? '#e74c3c' : '#2c3e50';
+            ctx.strokeRect(n.x - w / 2, n.y - h / 2, w, h);
             ctx.beginPath(); ctx.moveTo(n.x - w / 2, n.y); ctx.lineTo(n.x + w / 2, n.y); ctx.moveTo(n.x, n.y - h / 2); ctx.lineTo(n.x, n.y + h / 2); ctx.stroke();
             ctx.fillStyle = '#000'; ctx.font = '11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             let format = num => Number(num.toFixed(1));
             ctx.fillText(format(n.es), n.x - w / 4, n.y - h / 4); ctx.fillText(format(n.ef), n.x + w / 4, n.y - h / 4);
             ctx.fillText(format(n.ls), n.x - w / 4, n.y + h / 4); ctx.fillText(format(n.lf), n.x + w / 4, n.y + h / 4);
-            ctx.fillStyle = esCritico ? '#e74c3c' : '#2c3e50'; ctx.font = 'bold 14px Arial'; ctx.fillText(n.id, n.x, n.y - h / 2 - 10);
+            ctx.fillStyle = isActiveStep ? '#0f834b' : isDoneStep ? '#8209b9' : (esCritico ? '#e74c3c' : '#2c3e50'); ctx.font = 'bold 14px Arial'; ctx.fillText(n.id, n.x, n.y - h / 2 - 10);
             
             // Dibujar la Holgura debajo del nodo en la Red de Actividades (CPM)
             ctx.fillStyle = esCritico ? '#e74c3c' : '#3498db';
@@ -776,7 +869,7 @@ function dibujar() {
 
             const textoT = `t:${format(n.duracion)}`;
             ctx.font = '10px Arial';
-            ctx.fillStyle = '#444';
+            ctx.fillStyle = isActiveStep ? '#0f834b' : isDoneStep ? '#8b0dd4' : '#444';
             ctx.fillText(textoT, n.x, n.y + h / 2 + 24);
         }
     }
@@ -789,6 +882,48 @@ function ejecutarAccionSimulacion() {
     } else {
         calcularEscenarioPersonalizado();
     }
+}
+
+function calcularReduccionMaxima() {
+    const divRes = document.getElementById('resultadoDinamico');
+    const filas  = document.querySelectorAll('#cuerpoTabla tr');
+
+    let actBase = [];
+    let costoNormalTotal = 0, costoMaxTotal = 0;
+
+    filas.forEach(fil => {
+        const id = fil.querySelector('.act-id').value.trim().toUpperCase();
+        if (!id) return;
+        const tNormal = parseFloat(fil.querySelector('.tiempo-calc').value) || 0;
+        const compTEl = fil.querySelector('.comp-tiempo');
+        const compNEl = fil.querySelector('.comp-costo-normal');
+        const compCEl = fil.querySelector('.comp-costo-comp');
+        const tMin    = compTEl ? (parseFloat(compTEl.value) || tNormal) : tNormal;
+        const cNormal = compNEl ? (parseFloat(compNEl.value) || 0) : 0;
+        const cComp   = compCEl ? (parseFloat(compCEl.value) || 0) : 0;
+        const precStr = fil.querySelector('.act-prec').value.trim();
+        const prec    = (precStr === '-' || precStr === '') ? [] : precStr.split(/[,;]/).map(p => p.trim().toUpperCase());
+
+        costoNormalTotal += cNormal;
+        costoMaxTotal    += cComp;
+
+        const redMax     = Math.max(0, tNormal - tMin);
+        const costoExtra = Math.max(0, cComp - cNormal);
+        const cpd        = redMax > 0 ? (costoExtra / redMax) : Infinity;
+        const nodo       = nodos[id];
+        const esCritica  = nodo ? Math.abs(nodo.holgura) < 0.01 : false;
+
+        actBase.push({ id, tNormal, tMin, cNormal, cComp, prec, redMax, costoExtra, costoPorDia: cpd, esCritica });
+    });
+
+    if (actBase.length === 0) {
+        divRes.innerHTML = "<span style='color:#e74c3c;'>No hay actividades en la tabla.</span>";
+        return;
+    }
+
+    let output = generarTablaResumen(actBase, costoNormalTotal, costoMaxTotal);
+    output += ejecutarCrashingIterativo(actBase, duracionGlobalProyecto, 0, true);
+    divRes.innerHTML = output;
 }
 
 function calcularCompresionCostos() {
@@ -943,7 +1078,7 @@ function calcularDuracionRed(actBase, durMap) {
     return { durTotal, criticas };
 }
 
-function ejecutarCrashingIterativo(actBase, durInicial, plazoObj) {
+function ejecutarCrashingIterativo(actBase, durInicial, plazoObj, reducirMaximo = false) {
     const costoBase = actBase.reduce((sum, a) => sum + a.cNormal, 0);
     let durMap = {};
     let redUsada = {};
@@ -953,10 +1088,11 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj) {
     let pasos = [];
     let durActual = durInicial;
     let puntosCurva = [{ duracion: durInicial, costo: costoBase }];
-    const MAX = 500;
+    const MAX = 1000;
     let iter = 0;
+    const plazoFinal = reducirMaximo ? 0 : plazoObj;
 
-    while (durActual > plazoObj && iter++ < MAX) {
+    while (durActual > plazoFinal && iter++ < MAX) {
         const { criticas } = calcularDuracionRed(actBase, durMap);
         const candidatas = actBase
             .filter(a => criticas.has(a.id) && redUsada[a.id] < a.redMax && a.costoPorDia < Infinity)
@@ -972,19 +1108,52 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj) {
         redUsada[elegida.id] += 1;
         costoAcum += elegida.costoPorDia;
         durActual = calcularDuracionRed(actBase, durMap).durTotal;
-        pasos.push({ tipo: 'paso', act: elegida.id, costoDia: elegida.costoPorDia, costoAcum, nuevaDur: durActual });
+        const durMapSnapshot = { ...durMap };
+        pasos.push({ tipo: 'paso', act: elegida.id, costoDia: elegida.costoPorDia, costoAcum, nuevaDur: durActual, durMap: durMapSnapshot });
         puntosCurva.push({ duracion: durActual, costo: costoBase + costoAcum });
     }
 
+    const grupos = [];
+    pasos.forEach(p => {
+        if (p.tipo !== 'paso') return;
+        if (grupos.length && grupos[grupos.length - 1].nuevaDur === p.nuevaDur) {
+            grupos[grupos.length - 1].actividades.push({ act: p.act, costoDia: p.costoDia });
+            grupos[grupos.length - 1].costoAcum = p.costoAcum;
+            grupos[grupos.length - 1].durMap = p.durMap;
+        } else {
+            grupos.push({
+                step: grupos.length + 1,
+                nuevaDur: p.nuevaDur,
+                costoAcum: p.costoAcum,
+                durMap: p.durMap,
+                actividades: [{ act: p.act, costoDia: p.costoDia }]
+            });
+        }
+    });
+
+    capasPasos = grupos;
+    currentPasoIndex = 0;
     datosCurvaCostoTiempo = puntosCurva;
     dibujarCurvaCostoTiempo();
 
-    const alcanzado = durActual <= plazoObj;
+    const alcanzado = reducirMaximo ? true : durActual <= plazoObj;
     const col = alcanzado ? '#27ae60' : '#e67e22';
+    const titulo = reducirMaximo
+        ? `🗓️ Reducción Máxima Alcanzada — de ${durInicial} a ${durActual} semanas`
+        : `🗓️ Plan de Crashing — de ${durInicial} a ${plazoObj} semanas`;
+    const subtitulo = reducirMaximo
+        ? `Se redujo hasta el límite de compresión disponible.`
+        : `Reducción requerida: ${durInicial - plazoObj} sem`;
+    const resultadoTexto = reducirMaximo
+        ? '✅ Se alcanzó el límite máximo de compresión disponible.'
+        : alcanzado
+            ? '✅ Plazo objetivo alcanzado'
+            : '⚠️ No fue posible alcanzar el plazo con la compresión disponible';
+
     let html = `<div style="background:white;padding:16px;border-radius:8px;border:1px solid #ddd;margin-top:14px;font-family:'Segoe UI',system-ui,sans-serif;">
         <h4 style="margin:0 0 10px;color:#2c3e50;font-size:1.1em;border-bottom:2px solid ${col};padding-bottom:6px;">
-            🗓️ Plan de Crashing — de ${durInicial} a ${plazoObj} semanas
-            <span style="font-size:11px;font-weight:normal;color:#7f8c8d;margin-left:8px;">Reducción requerida: ${durInicial - plazoObj} sem</span>
+            ${titulo}
+            <span style="font-size:11px;font-weight:normal;color:#7f8c8d;margin-left:8px;">${subtitulo}</span>
         </h4>
         <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
@@ -1014,12 +1183,57 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj) {
 
     html += `</tbody></table></div>
         <div style="margin-top:10px;padding:10px;background:${alcanzado ? '#eafaf1' : '#fdf2e9'};border-radius:4px;font-size:13px;font-weight:bold;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-            <span style="color:${alcanzado ? '#1e8449' : '#c0392b'};">${alcanzado ? '✅ Plazo objetivo alcanzado' : '⚠️ No fue posible alcanzar el plazo con la compresión disponible'}</span>
+            <span style="color:${alcanzado ? '#1e8449' : '#c0392b'};">${resultadoTexto}</span>
             <span>Duración final: <strong>${durActual} semanas</strong></span>
             <span style="color:#c0392b;">Costo adicional: <strong>$${costoAcum.toFixed(2)}</strong></span>
         </div>
     </div>`;
     return html;
+}
+
+function actualizarPanelCapas() {
+    const panel = document.getElementById('panelCapasPasos');
+    if (!panel) return;
+    if (!capasPasos.length) {
+        panel.innerHTML = `<div style="background:#f8f9fa;border:1px solid #dde2e6;padding:14px;border-radius:8px;color:#555;font-size:14px;">No hay pasos de reducción disponibles. Ejecuta Caso C para ver los pasos comprimidos.</div>`;
+        return;
+    }
+
+    const paso = capasPasos[Math.max(0, Math.min(currentPasoIndex, capasPasos.length - 1))];
+    const total = capasPasos.length;
+    const anteriorDisabled = currentPasoIndex <= 0;
+    const siguienteDisabled = currentPasoIndex >= total - 1;
+    const actividadesText = paso.actividades.map(a => a.act).join(', ');
+    const costoTotal = paso.actividades.reduce((sum, item) => sum + item.costoDia, 0);
+
+    let html = `<div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <button onclick="cambiarPasoCapas(-1)" style="padding:10px 14px;border:1px solid #95a5a6;background:${anteriorDisabled ? '#ecf0f1' : '#ffffff'};color:${anteriorDisabled ? '#95a5a6' : '#2c3e50'};border-radius:6px;cursor:${anteriorDisabled ? 'not-allowed' : 'pointer'};" ${anteriorDisabled ? 'disabled' : ''}>&larr; Retroceder</button>
+            <div style="font-weight:700;color:#2c3e50;">Paso ${currentPasoIndex + 1} / ${total}</div>
+            <button onclick="cambiarPasoCapas(1)" style="padding:10px 14px;border:1px solid #95a5a6;background:${siguienteDisabled ? '#ecf0f1' : '#ffffff'};color:${siguienteDisabled ? '#95a5a6' : '#2c3e50'};border-radius:6px;cursor:${siguienteDisabled ? 'not-allowed' : 'pointer'};" ${siguienteDisabled ? 'disabled' : ''}>Avanzar &rarr;</button>
+        </div>
+        <div style="background:#ffffff;border:1px solid #dee2e6;padding:16px;border-radius:8px;">
+            <div style="margin-bottom:10px;font-size:14px;color:#34495e;font-weight:700;">Actividad(es) reducida(s): <span style="color:#c0392b;">${actividadesText}</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;color:#2c3e50;">
+                <div style="background:#f8f9fa;padding:12px;border-radius:6px;border:1px solid #dde2e6;">
+                    <div style="color:#7f8c8d;margin-bottom:6px;">Costo adicional total</div>
+                    <div style="font-weight:700;">$${costoTotal.toFixed(2)}</div>
+                </div>
+                <div style="background:#f8f9fa;padding:12px;border-radius:6px;border:1px solid #dde2e6;">
+                    <div style="color:#7f8c8d;margin-bottom:6px;">Duración total</div>
+                    <div style="font-weight:700;">${paso.nuevaDur.toFixed(1)} sem</div>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    panel.innerHTML = html;
+}
+
+function cambiarPasoCapas(delta) {
+    if (!capasPasos.length) return;
+    currentPasoIndex = Math.max(0, Math.min(currentPasoIndex + delta, capasPasos.length - 1));
+    actualizarPanelCapas();
+    if (vistaActual === 'capas' || vistaActual === 'cpm') dibujar();
 }
 
 function toggleTiemposDeRed() { procesarYDibujar(); }
