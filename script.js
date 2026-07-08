@@ -911,8 +911,8 @@ function dibujar() {
     let pasosActuales = [];
     if (vistaActual === 'capas' && capasPasos.length) {
         const paso = capasPasos[Math.max(0, Math.min(currentPasoIndex, capasPasos.length - 1))];
-        pasosActuales = paso.actividades.map(a => a.act);
-        pasosPrevios = capasPasos.slice(0, currentPasoIndex).flatMap(g => g.actividades.map(a => a.act));
+        pasosActuales = paso.actividades.slice();
+        pasosPrevios = capasPasos.slice(0, currentPasoIndex).flatMap(g => g.actividades);
         dibujarNodos = clonarNodosParaPaso(paso.durMap);
         calcularRedTemporal(dibujarNodos);
     }
@@ -1145,107 +1145,143 @@ function generarTablaResumen(actBase, costoNormalTotal, costoMaxTotal) {
     return html;
 }
 
-function calcularDuracionRed(actBase, durMap) {
-    let mn = { 'INICIO': { ef:0, es:0, ls:0, lf:0, duracion:0, prec:[], suc:[], holgura:0 } };
+function calcularCPM(actBase, durMap = {}) {
+    const red = { 'INICIO': { id:'INICIO', duracion:0, prec:[], suc:[], es:0, ef:0, ls:0, lf:0, holgura:0 } };
+    const precedentesUsados = new Set();
+
     actBase.forEach(a => {
         const prec = a.prec.length === 0 ? ['INICIO'] : [...a.prec];
-        mn[a.id] = { ef:0, es:0, ls:0, lf:0, duracion: durMap[a.id] ?? a.tNormal, prec, suc:[], holgura:0 };
+        red[a.id] = {
+            id: a.id,
+            duracion: durMap[a.id] !== undefined ? durMap[a.id] : a.tNormal,
+            prec,
+            suc: [],
+            es: 0,
+            ef: 0,
+            ls: 0,
+            lf: 0,
+            holgura: 0
+        };
+        a.prec.forEach(p => precedentesUsados.add(p));
     });
-    const conPred = new Set(); actBase.forEach(a => a.prec.forEach(p => conPred.add(p)));
-    const terminales = actBase.map(a => a.id).filter(id => !conPred.has(id));
-    mn['FIN'] = { ef:0, es:0, ls:0, lf:0, duracion:0, prec: terminales, suc:[], holgura:0 };
-    Object.keys(mn).forEach(id => mn[id].suc = []);
-    Object.keys(mn).forEach(id => mn[id].prec.forEach(p => { if (mn[p]) mn[p].suc.push(id); }));
-    let inDeg = {}; Object.keys(mn).forEach(id => inDeg[id] = mn[id].prec.length);
-    let q = ['INICIO'];
-    while (q.length) {
-        const cur = q.shift();
-        mn[cur].suc.forEach(s => {
-            if (!mn[s]) return;
-            mn[s].es = Math.max(mn[s].es, mn[cur].ef);
-            mn[s].ef = mn[s].es + mn[s].duracion;
-            if (--inDeg[s] === 0) q.push(s);
+
+    const terminales = actBase.map(a => a.id).filter(id => !precedentesUsados.has(id));
+    red['FIN'] = { id:'FIN', duracion:0, prec: terminales.length ? [...terminales] : ['INICIO'], suc: [], es:0, ef:0, ls:0, lf:0, holgura:0 };
+
+    Object.keys(red).forEach(id => { red[id].suc = []; });
+    Object.keys(red).forEach(id => { red[id].prec.forEach(p => { if (red[p]) red[p].suc.push(id); }); });
+
+    const inDegree = {}; Object.keys(red).forEach(id => { inDegree[id] = red[id].prec.length; });
+    const queue = ['INICIO'];
+    while (queue.length > 0) {
+        const actual = queue.shift();
+        red[actual].suc.forEach(suc => {
+            red[suc].es = Math.max(red[suc].es, red[actual].ef);
+            red[suc].ef = red[suc].es + red[suc].duracion;
+            inDegree[suc] -= 1;
+            if (inDegree[suc] === 0) queue.push(suc);
         });
     }
-    const durTotal = mn['FIN'].ef;
-    Object.keys(mn).forEach(id => { mn[id].lf = durTotal; mn[id].ls = durTotal; });
-    let outDeg = {}; Object.keys(mn).forEach(id => outDeg[id] = mn[id].suc.length);
-    q = ['FIN'];
-    while (q.length) {
-        const cur = q.shift();
-        mn[cur].prec.forEach(p => {
-            if (!mn[p]) return;
-            mn[p].lf = Math.min(mn[p].lf, mn[cur].ls);
-            mn[p].ls = mn[p].lf - mn[p].duracion;
-            mn[p].holgura = mn[p].ls - mn[p].es;
-            if (--outDeg[p] === 0) q.push(p);
+
+    const durTotal = red['FIN'].ef;
+    Object.keys(red).forEach(id => { red[id].lf = durTotal; red[id].ls = durTotal - red[id].duracion; });
+    const outDegree = {}; Object.keys(red).forEach(id => { outDegree[id] = red[id].suc.length; });
+    const backQueue = ['FIN'];
+    while (backQueue.length > 0) {
+        const actual = backQueue.shift();
+        red[actual].prec.forEach(prec => {
+            if (!red[prec]) return;
+            red[prec].lf = Math.min(red[prec].lf, red[actual].ls);
+            red[prec].ls = red[prec].lf - red[prec].duracion;
+            red[prec].holgura = red[prec].ls - red[prec].es;
+            outDegree[prec] -= 1;
+            if (outDegree[prec] === 0) backQueue.push(prec);
         });
     }
-    const criticas = new Set(actBase.filter(a => mn[a.id] && Math.abs(mn[a.id].holgura) < 0.01).map(a => a.id));
-    return { durTotal, criticas };
+
+    const criticas = new Set(actBase.filter(a => red[a.id] && Math.abs(red[a.id].holgura) < 1e-9).map(a => a.id));
+    return { red, durTotal, criticas };
+}
+
+function encontrarMejorConjuntoReduccion(actBase, durMap, durActual) {
+    const { criticas } = calcularCPM(actBase, durMap);
+    const candidatas = actBase.filter(a => criticas.has(a.id) && durMap[a.id] > a.tMin && a.costoPorDia < Infinity);
+    if (candidatas.length === 0) return null;
+
+    candidatas.sort((a, b) => a.costoPorDia - b.costoPorDia || a.id.localeCompare(b.id));
+    let mejor = null;
+    let mejorCosto = Infinity;
+
+    function buscar(index, seleccion, costoActual) {
+        if (costoActual >= mejorCosto) return;
+        if (seleccion.length > 0) {
+            const durMapSim = { ...durMap };
+            seleccion.forEach(a => { durMapSim[a.id] = durMapSim[a.id] - 1; });
+            const { durTotal } = calcularCPM(actBase, durMapSim);
+            if (durTotal === durActual - 1) {
+                mejor = [...seleccion];
+                mejorCosto = costoActual;
+            }
+        }
+        for (let i = index; i < candidatas.length; i += 1) {
+            const actividad = candidatas[i];
+            if (durMap[actividad.id] - 1 < actividad.tMin) continue;
+            const costoSiguiente = costoActual + actividad.costoPorDia;
+            if (costoSiguiente >= mejorCosto) continue;
+            seleccion.push(actividad);
+            buscar(i + 1, seleccion, costoSiguiente);
+            seleccion.pop();
+        }
+    }
+
+    buscar(0, [], 0);
+    if (!mejor) return null;
+    const costoPaso = mejor.reduce((sum, a) => sum + a.costoPorDia, 0);
+    return { actividades: mejor.map(a => a.id), costoPaso };
+}
+
+function calcularDuracionRed(actBase, durMap) {
+    return calcularCPM(actBase, durMap).durTotal;
 }
 
 function ejecutarCrashingIterativo(actBase, durInicial, plazoObj, reducirMaximo = false) {
     const costoBase = actBase.reduce((sum, a) => sum + a.cNormal, 0);
-    let durMap = {};
-    let redUsada = {};
-    actBase.forEach(a => { durMap[a.id] = a.tNormal; redUsada[a.id] = 0; });
-
-    const rutaCriticaOriginal = new Set(actBase.filter(a => a.esCritica).map(a => a.id));
-    const preservaRutaCriticaOriginal = (id) => {
-        const durMapSim = { ...durMap, [id]: durMap[id] - 1 };
-        const { criticas: criticasSim } = calcularDuracionRed(actBase, durMapSim);
-        return [...rutaCriticaOriginal].every(origId => criticasSim.has(origId));
-    };
+    const durMap = {};
+    actBase.forEach(a => { durMap[a.id] = a.tNormal; });
 
     let costoAcum = 0;
-    let pasos = [];
     let durActual = durInicial;
-    let puntosCurva = [{ duracion: durInicial, costo: costoBase }];
+    const pasos = [];
+    const puntosCurva = [{ duracion: durInicial, costo: costoBase }];
+    const plazoFinal = reducirMaximo ? 0 : plazoObj;
     const MAX = 1000;
     let iter = 0;
-    const plazoFinal = reducirMaximo ? 0 : plazoObj;
 
     while (durActual > plazoFinal && iter++ < MAX) {
-        const { criticas } = calcularDuracionRed(actBase, durMap);
-        const candidatas = actBase
-            .filter(a => criticas.has(a.id) && redUsada[a.id] < a.redMax && a.costoPorDia < Infinity && preservaRutaCriticaOriginal(a.id))
-            .sort((a, b) => a.costoPorDia - b.costoPorDia);
-
-        if (candidatas.length === 0) {
-            pasos.push({ tipo: 'limite', msg: 'No quedan actividades críticas comprimibles que preserven la ruta crítica original. Se alcanzó el límite de reducción.' });
+        const paso = encontrarMejorConjuntoReduccion(actBase, durMap, durActual);
+        if (!paso) {
+            pasos.push({ tipo: 'limite', msg: 'No existe ninguna combinación de actividades críticas disponibles que reduzca la duración del proyecto en 1 unidad respetando los límites de compresión.' });
             break;
         }
 
-        const elegida = candidatas[0];
-        durMap[elegida.id] -= 1;
-        redUsada[elegida.id] += 1;
-        costoAcum += elegida.costoPorDia;
-        durActual = calcularDuracionRed(actBase, durMap).durTotal;
+        paso.actividades.forEach(actId => { durMap[actId] = durMap[actId] - 1; });
+        costoAcum += paso.costoPaso;
+        durActual = calcularDuracionRed(actBase, durMap);
+        const { criticas } = calcularCPM(actBase, durMap);
         const durMapSnapshot = { ...durMap };
-        pasos.push({ tipo: 'paso', act: elegida.id, costoDia: elegida.costoPorDia, costoAcum, nuevaDur: durActual, durMap: durMapSnapshot });
+        pasos.push({
+            tipo: 'paso',
+            actividades: paso.actividades,
+            costoPaso: paso.costoPaso,
+            costoAcum,
+            nuevaDur: durActual,
+            criticas: Array.from(criticas).sort(),
+            durMap: durMapSnapshot
+        });
         puntosCurva.push({ duracion: durActual, costo: costoBase + costoAcum });
     }
 
-    const grupos = [];
-    pasos.forEach(p => {
-        if (p.tipo !== 'paso') return;
-        if (grupos.length && grupos[grupos.length - 1].nuevaDur === p.nuevaDur) {
-            grupos[grupos.length - 1].actividades.push({ act: p.act, costoDia: p.costoDia });
-            grupos[grupos.length - 1].costoAcum = p.costoAcum;
-            grupos[grupos.length - 1].durMap = p.durMap;
-        } else {
-            grupos.push({
-                step: grupos.length + 1,
-                nuevaDur: p.nuevaDur,
-                costoAcum: p.costoAcum,
-                durMap: p.durMap,
-                actividades: [{ act: p.act, costoDia: p.costoDia }]
-            });
-        }
-    });
-
-    capasPasos = grupos;
+    capasPasos = pasos.filter(p => p.tipo === 'paso');
     currentPasoIndex = 0;
     datosCurvaCostoTiempo = puntosCurva;
     dibujarCurvaCostoTiempo();
@@ -1273,10 +1309,11 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj, reducirMaximo 
         <table style="width:100%;border-collapse:collapse;font-size:12px;">
             <thead><tr style="background:#f8f9fa;">
                 <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:center;">Paso</th>
-                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;">Actividad</th>
+                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;">Actividad(es)</th>
                 <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:right;">Costo del Paso</th>
                 <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:right;">Costo Acumulado</th>
-                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:center;">Duración (sem)</th>
+                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:center;">Duración</th>
+                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:center;">Críticas tras paso</th>
             </tr></thead>
             <tbody>`;
 
@@ -1285,13 +1322,14 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj, reducirMaximo 
             const ok = p.nuevaDur <= plazoObj;
             html += `<tr style="border-bottom:1px solid #eee;background:${ok ? '#eafaf1' : 'transparent'}">
                 <td style="padding:7px 8px;text-align:center;color:#7f8c8d;font-weight:bold;">${i + 1}</td>
-                <td style="padding:7px 8px;font-weight:bold;color:#2c3e50;">Act. ${p.act}</td>
-                <td style="padding:7px 8px;text-align:right;color:#c0392b;">${getSimboloMoneda()}${p.costoDia.toFixed(2)}/${getUnidadTiempoAbrev()}</td>
+                <td style="padding:7px 8px;font-weight:bold;color:#2c3e50;">${p.actividades.join(', ')}</td>
+                <td style="padding:7px 8px;text-align:right;color:#c0392b;">${getSimboloMoneda()}${p.costoPaso.toFixed(2)}</td>
                 <td style="padding:7px 8px;text-align:right;font-weight:bold;color:#2980b9;">${getSimboloMoneda()}${p.costoAcum.toFixed(2)}</td>
-                <td style="padding:7px 8px;text-align:center;font-weight:bold;color:${ok ? '#1e8449' : '#2c3e50'};">${p.nuevaDur} ${getUnidadTiempoAbrev()} ${ok ? '✅' : ''}</td>
+                <td style="padding:7px 8px;text-align:center;font-weight:bold;color:${ok ? '#1e8449' : '#2c3e50'};">${p.nuevaDur} ${getUnidadTiempoAbrev()}</td>
+                <td style="padding:7px 8px;text-align:center;color:#7f8c8d;">${p.criticas.join(', ')}</td>
             </tr>`;
         } else {
-            html += `<tr><td colspan="5" style="padding:8px;color:#e67e22;font-style:italic;">⚠️ ${p.msg}</td></tr>`;
+            html += `<tr><td colspan="6" style="padding:8px;color:#e67e22;font-style:italic;">⚠️ ${p.msg}</td></tr>`;
         }
     });
 
