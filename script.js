@@ -3,6 +3,19 @@ let casoSeleccionado = 'caso1';
 let nodos = {};
 let duracionGlobalProyecto = 0;
 let varianzaGlobalProyecto = 0;
+let zoomLevel = 1.0;
+let datosCurvaCostoTiempo = [];
+
+// --- Funciones de Zoom ---
+function ajustarZoom(delta) {
+    zoomLevel = Math.max(0.3, Math.min(3.0, zoomLevel + delta));
+    dibujar();
+}
+
+function resetearZoom() {
+    zoomLevel = 1.0;
+    dibujar();
+}
 
 // --- Drag & Drop en Canvas ---
 let draggingNode = null;
@@ -22,7 +35,10 @@ function getCanvasPos(canvas, e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width  / rect.width;
     const scaleY = canvas.height / rect.height;
-    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+    return { 
+        x: ((e.clientX - rect.left) * scaleX) / zoomLevel, 
+        y: ((e.clientY - rect.top) * scaleY) / zoomLevel 
+    };
 }
 
 function hitTest(n, px, py) {
@@ -112,13 +128,26 @@ function seleccionarCasoBloque(caso) {
     casoSeleccionado = caso;
     document.getElementById('btnCaso1').classList.toggle('active', caso === 'caso1');
     document.getElementById('btnCaso3').classList.toggle('active', caso === 'caso3');
+    document.getElementById('btnCasoC').classList.toggle('active', caso === 'casoC');
     actualizarCamposVisibles();
 }
 
 function actualizarCamposVisibles() {
-    document.getElementById('filaPlazo').style.display = 'flex'; // Siempre visible en ambos casos
-    document.getElementById('filaPorcentaje').style.display = (casoSeleccionado === 'caso1') ? 'none' : 'flex';
-    document.getElementById('resultadoDinamico').innerHTML = "";
+    const isCasoC = casoSeleccionado === 'casoC';
+    // Campos del formulario A/B
+    document.getElementById('filaPlazo').style.display     = isCasoC ? 'none' : 'flex';
+    document.getElementById('filaPorcentaje').style.display = (casoSeleccionado === 'caso1' || isCasoC) ? 'none' : 'flex';
+    // Input plazo objetivo Caso C
+    const filaPlazoCasoC = document.getElementById('filaPlazoCasoC');
+    if (filaPlazoCasoC) filaPlazoCasoC.style.display = isCasoC ? 'flex' : 'none';
+    // Columnas de compresión en la tabla
+    document.querySelectorAll('.col-compresion').forEach(el => el.classList.toggle('hidden', !isCasoC));
+    // Texto del botón principal
+    const btn = document.getElementById('btnEjecutarAccion');
+    if (btn) btn.textContent = isCasoC
+        ? '📊 Calcular costo y disponibilidad de actividades a comprimir'
+        : 'Ejecutar Simulación Estadística';
+    document.getElementById('resultadoDinamico').innerHTML = '';
 }
 
 // Simulación con textos totalmente limpios sin símbolos de formato caídos ($)
@@ -210,6 +239,7 @@ function recalcularFila(inputEl) {
 function agregarFila(datos = null) {
     const tbody = document.getElementById('cuerpoTabla');
     const isPert = document.getElementById('modoPertCheck').checked;
+    const isCasoC = casoSeleccionado === 'casoC';
     const tr = document.createElement('tr');
     tr.innerHTML = `
                 <td><input type="text" value="${datos ? datos.id : ''}" class="act-id"></td>
@@ -220,6 +250,9 @@ function agregarFila(datos = null) {
                 <td class="col-simple ${isPert ? 'hidden' : ''}"><input type="number" value="${datos ? datos.unico : 0}" class="tiempo-unico" oninput="actualizarSimple(this)"></td>
                 <td><input type="number" value="${datos ? datos.calc : 0}" class="tiempo-calc" disabled></td>
                 <td class="col-pert ${isPert ? '' : 'hidden'}"><input type="number" value="${datos ? datos.var : 0}" class="varianza-calc" disabled></td>
+                <td class="col-compresion ${isCasoC ? '' : 'hidden'}"><input type="number" value="${datos ? (datos.compTiempo || 0) : 0}" class="comp-tiempo"></td>
+                <td class="col-compresion ${isCasoC ? '' : 'hidden'}"><input type="number" value="${datos ? (datos.compCostoNormal || 0) : 0}" class="comp-costo-normal"></td>
+                <td class="col-compresion ${isCasoC ? '' : 'hidden'}"><input type="number" value="${datos ? (datos.compCostoComp || 0) : 0}" class="comp-costo-comp"></td>
                 <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>`;
     tbody.appendChild(tr);
 }
@@ -231,21 +264,112 @@ function cambiarVista(vista) {
     document.getElementById('btnSimple').classList.toggle('active', vista === 'simple');
     document.getElementById('btnCPM').classList.toggle('active', vista === 'cpm');
     document.getElementById('btnGantt').classList.toggle('active', vista === 'gantt');
+    document.getElementById('btnCosto').classList.toggle('active', vista === 'costo');
 
-    // Control de visibilidad
     const isGantt = vista === 'gantt';
-    document.getElementById('canvasRed').style.display = isGantt ? 'none' : 'block';
+    const isCosto = vista === 'costo';
+    document.getElementById('canvasRed').style.display = (isGantt || isCosto) ? 'none' : 'block';
     document.getElementById('containerGantt').classList.toggle('hidden', !isGantt);
-    document.getElementById('canvasHint').style.display = isGantt ? 'none' : 'block';
+    document.getElementById('containerCostoTiempo').classList.toggle('hidden', !isCosto);
+    document.getElementById('canvasHint').style.display = (isGantt || isCosto) ? 'none' : 'block';
+    const zoomEl = document.getElementById('zoomControls');
+    if (zoomEl) zoomEl.style.display = (isGantt || isCosto) ? 'none' : 'flex';
 
     if (isGantt) {
         dibujarGantt();
+    } else if (isCosto) {
+        dibujarCurvaCostoTiempo();
     } else {
         dibujar();
     }
 }
 
 // 2. Gráfico de Gantt Profesional
+function dibujarCurvaCostoTiempo() {
+    const canvas = document.getElementById('canvasCostoTiempo');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (!datosCurvaCostoTiempo.length) {
+        ctx.fillStyle = '#6c757d';
+        ctx.font = '16px Segoe UI';
+        ctx.textAlign = 'center';
+        ctx.fillText('Completa el análisis de compresión para ver la curva costo-tiempo.', canvas.width / 2, canvas.height / 2);
+        return;
+    }
+
+    const padding = { top: 30, right: 30, bottom: 60, left: 70 };
+    const width = canvas.width - padding.left - padding.right;
+    const height = canvas.height - padding.top - padding.bottom;
+    const minDur = Math.min(...datosCurvaCostoTiempo.map(p => p.duracion));
+    const maxDur = Math.max(...datosCurvaCostoTiempo.map(p => p.duracion));
+    const minCost = Math.min(...datosCurvaCostoTiempo.map(p => p.costo));
+    const maxCost = Math.max(...datosCurvaCostoTiempo.map(p => p.costo));
+    const durSpan = Math.max(1, maxDur - minDur);
+    const costSpan = Math.max(1, maxCost - minCost);
+
+    ctx.strokeStyle = '#d6dde8';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+        const y = padding.top + (height / 4) * i;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(canvas.width - padding.right, y);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = '#2c3e50';
+    ctx.beginPath();
+    ctx.moveTo(padding.left, padding.top + height);
+    ctx.lineTo(padding.left, padding.top);
+    ctx.lineTo(canvas.width - padding.right, padding.top);
+    ctx.stroke();
+
+    ctx.fillStyle = '#2c3e50';
+    ctx.font = '12px Segoe UI';
+    ctx.textAlign = 'center';
+    ctx.fillText('Duración (semanas)', canvas.width / 2, canvas.height - 18);
+    ctx.save();
+    ctx.translate(20, canvas.height / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('Costo acumulado', 0, 0);
+    ctx.restore();
+
+    ctx.beginPath();
+    datosCurvaCostoTiempo.forEach((p, index) => {
+        const x = padding.left + ((p.duracion - minDur) / durSpan) * width;
+        const y = padding.top + height - ((p.costo - minCost) / costSpan) * height;
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = '#3498db';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    datosCurvaCostoTiempo.forEach((p, index) => {
+        const x = padding.left + ((p.duracion - minDur) / durSpan) * width;
+        const y = padding.top + height - ((p.costo - minCost) / costSpan) * height;
+        ctx.beginPath();
+        ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = index === 0 ? '#e74c3c' : '#27ae60';
+        ctx.fill();
+        ctx.fillStyle = '#2c3e50';
+        ctx.font = '11px Segoe UI';
+        ctx.textAlign = index === 0 ? 'right' : 'left';
+        ctx.fillText(`${p.duracion.toFixed(1)} sem`, x + 8, y - 8);
+    });
+
+    ctx.fillStyle = '#34495e';
+    ctx.font = '13px Segoe UI';
+    ctx.textAlign = 'left';
+    const ultimo = datosCurvaCostoTiempo[datosCurvaCostoTiempo.length - 1];
+    ctx.fillText(`Duración actual: ${duracionGlobalProyecto.toFixed(1)} sem`, padding.left, 20);
+    ctx.fillText(`Costo final estimado: $${Math.round(ultimo.costo).toLocaleString()}`, padding.left + 220, 20);
+}
+
 function dibujarGantt() {
     const container = document.getElementById('containerGantt');
     container.innerHTML = '';
@@ -414,7 +538,10 @@ function exportarJSON() {
             id: fil.querySelector('.act-id').value, prec: fil.querySelector('.act-prec').value,
             a: fil.querySelector('.pert-a').value, b: fil.querySelector('.pert-b').value,
             c: fil.querySelector('.pert-c').value, unico: fil.querySelector('.tiempo-unico').value,
-            calc: fil.querySelector('.tiempo-calc').value, var: fil.querySelector('.varianza-calc').value
+            calc: fil.querySelector('.tiempo-calc').value, var: fil.querySelector('.varianza-calc').value,
+            compTiempo: fil.querySelector('.comp-tiempo') ? fil.querySelector('.comp-tiempo').value : 0,
+            compCostoNormal: fil.querySelector('.comp-costo-normal') ? fil.querySelector('.comp-costo-normal').value : 0,
+            compCostoComp: fil.querySelector('.comp-costo-comp') ? fil.querySelector('.comp-costo-comp').value : 0
         });
     });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -451,7 +578,10 @@ function procesarYDibujar() {
         let precedentes = (precStr === '-' || precStr === '') ? [] : precStr.split(/[,;]/).map(p => p.trim().toUpperCase()).sort();
         if (precedentes.length === 0) precedentes = ["INICIO"];
 
-        const duracion = parseFloat(fil.querySelector('.tiempo-calc').value) || 0;
+        const usarComp = document.getElementById('usarTiemposComprimidosCheck') && document.getElementById('usarTiemposComprimidosCheck').checked;
+        const duracion = usarComp
+            ? (parseFloat(fil.querySelector('.comp-tiempo') ? fil.querySelector('.comp-tiempo').value : 0) || 0)
+            : (parseFloat(fil.querySelector('.tiempo-calc').value) || 0);
         const varianza = parseFloat(fil.querySelector('.varianza-calc').value) || 0;
         varianzasMap[id] = varianza;
 
@@ -560,6 +690,10 @@ function calcularNivelesYPosicionesOptimizadas() {
 function dibujar() {
     const canvas = document.getElementById('canvasRed'); const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    ctx.scale(zoomLevel, zoomLevel);
+
     for (let id in nodos) {
         let nOrigen = nodos[id];
         nOrigen.sucesores.forEach(sucId => {
@@ -612,4 +746,246 @@ function dibujar() {
             ctx.fillText(`H: ${format(n.holgura)}`, n.x, n.y + h / 2 + 11);
         }
     }
+    ctx.restore();
 }
+
+function ejecutarAccionSimulacion() {
+    if (casoSeleccionado === 'casoC') {
+        calcularCompresionCostos();
+    } else {
+        calcularEscenarioPersonalizado();
+    }
+}
+
+function calcularCompresionCostos() {
+    const divRes = document.getElementById('resultadoDinamico');
+    const filas  = document.querySelectorAll('#cuerpoTabla tr');
+
+    let actBase = [];
+    let costoNormalTotal = 0, costoMaxTotal = 0;
+
+    filas.forEach(fil => {
+        const id = fil.querySelector('.act-id').value.trim().toUpperCase();
+        if (!id) return;
+        const tNormal = parseFloat(fil.querySelector('.tiempo-calc').value) || 0;
+        const compTEl = fil.querySelector('.comp-tiempo');
+        const compNEl = fil.querySelector('.comp-costo-normal');
+        const compCEl = fil.querySelector('.comp-costo-comp');
+        const tMin    = compTEl ? (parseFloat(compTEl.value) || tNormal) : tNormal;
+        const cNormal = compNEl ? (parseFloat(compNEl.value) || 0) : 0;
+        const cComp   = compCEl ? (parseFloat(compCEl.value) || 0) : 0;
+        const precStr = fil.querySelector('.act-prec').value.trim();
+        const prec    = (precStr === '-' || precStr === '') ? [] : precStr.split(/[,;]/).map(p => p.trim().toUpperCase());
+
+        costoNormalTotal += cNormal;
+        costoMaxTotal    += cComp;
+
+        const redMax     = Math.max(0, tNormal - tMin);
+        const costoExtra = Math.max(0, cComp - cNormal);
+        const cpd        = redMax > 0 ? (costoExtra / redMax) : Infinity;
+        const nodo       = nodos[id];
+        const esCritica  = nodo ? Math.abs(nodo.holgura) < 0.01 : false;
+
+        actBase.push({ id, tNormal, tMin, cNormal, cComp, prec, redMax, costoExtra, costoPorDia: cpd, esCritica });
+    });
+
+    if (actBase.length === 0) {
+        divRes.innerHTML = "<span style='color:#e74c3c;'>No hay actividades en la tabla.</span>";
+        return;
+    }
+
+    let output = generarTablaResumen(actBase, costoNormalTotal, costoMaxTotal);
+
+    const plazoInput = document.getElementById('inputXCasoC');
+    const plazoObj   = plazoInput ? parseFloat(plazoInput.value) : null;
+    const durActual  = duracionGlobalProyecto;
+
+    if (plazoObj !== null && !isNaN(plazoObj)) {
+        if (plazoObj >= durActual) {
+            output += `<div style="background:#eafaf1;border-left:4px solid #27ae60;padding:12px;border-radius:4px;margin-top:12px;font-size:12px;">
+                <strong style="color:#1e8449;">✅ Sin necesidad de compresión</strong><br>
+                La duración actual (<strong>${durActual} sem</strong>) ya cumple con el plazo objetivo de <strong>${plazoObj} sem</strong>.
+            </div>`;
+        } else {
+            output += ejecutarCrashingIterativo(actBase, durActual, plazoObj);
+        }
+    }
+
+    divRes.innerHTML = output;
+}
+
+function generarTablaResumen(actBase, costoNormalTotal, costoMaxTotal) {
+    const sorted = [...actBase].sort((a, b) => {
+        if (a.esCritica !== b.esCritica) return a.esCritica ? -1 : 1;
+        const ca = a.costoPorDia === Infinity ? 9e9 : a.costoPorDia;
+        const cb = b.costoPorDia === Infinity ? 9e9 : b.costoPorDia;
+        return ca - cb;
+    });
+
+    let html = `<div style="background:white;padding:16px;border-radius:8px;border:1px solid #ddd;font-family:'Segoe UI',system-ui,sans-serif;">
+        <h4 style="margin:0 0 10px;color:#2c3e50;font-size:1.15em;border-bottom:2px solid #3498db;padding-bottom:6px;">
+            💸 Análisis de Compresión — Pendiente de Costo por Actividad
+        </h4>
+        <div style="overflow-x:auto;margin-bottom:14px;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;text-align:left;">
+            <thead><tr style="background:#f8f9fa;">
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;">Act.</th>
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;">T. Normal</th>
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;">T. Mínimo</th>
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;">Días Disp.</th>
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;">Costo Normal</th>
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;">Costo Comprimido</th>
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;">Costo Adicional</th>
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;">Costo/Día</th>
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;text-align:center;">Crítica?</th>
+            </tr></thead>
+            <tbody>`;
+
+    sorted.forEach(a => {
+        const badge = a.esCritica
+            ? `<span style="background:#e74c3c;color:white;padding:2px 7px;border-radius:3px;font-size:10px;font-weight:bold;">SÍ</span>`
+            : `<span style="background:#95a5a6;color:white;padding:2px 7px;border-radius:3px;font-size:10px;">NO</span>`;
+        const cpdStr = (a.costoPorDia === Infinity || a.redMax === 0) ? '—' : `$${a.costoPorDia.toFixed(2)}`;
+        html += `<tr style="border-bottom:1px solid #eee;background:${a.esCritica ? 'rgba(231,76,60,0.04)' : 'transparent'}">
+            <td style="padding:8px;font-weight:bold;color:#2c3e50;">${a.id}</td>
+            <td style="padding:8px;">${a.tNormal}</td>
+            <td style="padding:8px;">${a.tMin}</td>
+            <td style="padding:8px;font-weight:bold;color:${a.redMax > 0 ? '#27ae60' : '#7f8c8d'};">${a.redMax}</td>
+            <td style="padding:8px;">$${a.cNormal.toLocaleString()}</td>
+            <td style="padding:8px;">$${a.cComp.toLocaleString()}</td>
+            <td style="padding:8px;color:#c0392b;">$${a.costoExtra.toLocaleString()}</td>
+            <td style="padding:8px;font-weight:bold;color:#2980b9;">${cpdStr}</td>
+            <td style="padding:8px;text-align:center;">${badge}</td>
+        </tr>`;
+    });
+
+    html += `</tbody></table></div>
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;font-size:13px;font-weight:bold;background:#f9f9f9;padding:10px;border-radius:4px;border:1px solid #eee;gap:8px;">
+            <div>Costo Total Normal: <span style="color:#2c3e50;">$${costoNormalTotal.toLocaleString()}</span></div>
+            <div>Costo Máx. Comprimido: <span style="color:#2c3e50;">$${costoMaxTotal.toLocaleString()}</span></div>
+            <div style="color:#e74c3c;">Incremento Máximo: $${(costoMaxTotal - costoNormalTotal).toLocaleString()}</div>
+        </div>
+    </div>`;
+    return html;
+}
+
+function calcularDuracionRed(actBase, durMap) {
+    let mn = { 'INICIO': { ef:0, es:0, ls:0, lf:0, duracion:0, prec:[], suc:[], holgura:0 } };
+    actBase.forEach(a => {
+        const prec = a.prec.length === 0 ? ['INICIO'] : [...a.prec];
+        mn[a.id] = { ef:0, es:0, ls:0, lf:0, duracion: durMap[a.id] ?? a.tNormal, prec, suc:[], holgura:0 };
+    });
+    const conPred = new Set(); actBase.forEach(a => a.prec.forEach(p => conPred.add(p)));
+    const terminales = actBase.map(a => a.id).filter(id => !conPred.has(id));
+    mn['FIN'] = { ef:0, es:0, ls:0, lf:0, duracion:0, prec: terminales, suc:[], holgura:0 };
+    Object.keys(mn).forEach(id => mn[id].suc = []);
+    Object.keys(mn).forEach(id => mn[id].prec.forEach(p => { if (mn[p]) mn[p].suc.push(id); }));
+    let inDeg = {}; Object.keys(mn).forEach(id => inDeg[id] = mn[id].prec.length);
+    let q = ['INICIO'];
+    while (q.length) {
+        const cur = q.shift();
+        mn[cur].suc.forEach(s => {
+            if (!mn[s]) return;
+            mn[s].es = Math.max(mn[s].es, mn[cur].ef);
+            mn[s].ef = mn[s].es + mn[s].duracion;
+            if (--inDeg[s] === 0) q.push(s);
+        });
+    }
+    const durTotal = mn['FIN'].ef;
+    Object.keys(mn).forEach(id => { mn[id].lf = durTotal; mn[id].ls = durTotal; });
+    let outDeg = {}; Object.keys(mn).forEach(id => outDeg[id] = mn[id].suc.length);
+    q = ['FIN'];
+    while (q.length) {
+        const cur = q.shift();
+        mn[cur].prec.forEach(p => {
+            if (!mn[p]) return;
+            mn[p].lf = Math.min(mn[p].lf, mn[cur].ls);
+            mn[p].ls = mn[p].lf - mn[p].duracion;
+            mn[p].holgura = mn[p].ls - mn[p].es;
+            if (--outDeg[p] === 0) q.push(p);
+        });
+    }
+    const criticas = new Set(actBase.filter(a => mn[a.id] && Math.abs(mn[a.id].holgura) < 0.01).map(a => a.id));
+    return { durTotal, criticas };
+}
+
+function ejecutarCrashingIterativo(actBase, durInicial, plazoObj) {
+    const costoBase = actBase.reduce((sum, a) => sum + a.cNormal, 0);
+    let durMap = {};
+    let redUsada = {};
+    actBase.forEach(a => { durMap[a.id] = a.tNormal; redUsada[a.id] = 0; });
+
+    let costoAcum = 0;
+    let pasos = [];
+    let durActual = durInicial;
+    let puntosCurva = [{ duracion: durInicial, costo: costoBase }];
+    const MAX = 500;
+    let iter = 0;
+
+    while (durActual > plazoObj && iter++ < MAX) {
+        const { criticas } = calcularDuracionRed(actBase, durMap);
+        const candidatas = actBase
+            .filter(a => criticas.has(a.id) && redUsada[a.id] < a.redMax && a.costoPorDia < Infinity)
+            .sort((a, b) => a.costoPorDia - b.costoPorDia);
+
+        if (candidatas.length === 0) {
+            pasos.push({ tipo: 'limite', msg: 'No quedan actividades críticas comprimibles. Se alcanzó el límite de reducción.' });
+            break;
+        }
+
+        const elegida = candidatas[0];
+        durMap[elegida.id] -= 1;
+        redUsada[elegida.id] += 1;
+        costoAcum += elegida.costoPorDia;
+        durActual = calcularDuracionRed(actBase, durMap).durTotal;
+        pasos.push({ tipo: 'paso', act: elegida.id, costoDia: elegida.costoPorDia, costoAcum, nuevaDur: durActual });
+        puntosCurva.push({ duracion: durActual, costo: costoBase + costoAcum });
+    }
+
+    datosCurvaCostoTiempo = puntosCurva;
+    dibujarCurvaCostoTiempo();
+
+    const alcanzado = durActual <= plazoObj;
+    const col = alcanzado ? '#27ae60' : '#e67e22';
+    let html = `<div style="background:white;padding:16px;border-radius:8px;border:1px solid #ddd;margin-top:14px;font-family:'Segoe UI',system-ui,sans-serif;">
+        <h4 style="margin:0 0 10px;color:#2c3e50;font-size:1.1em;border-bottom:2px solid ${col};padding-bottom:6px;">
+            🗓️ Plan de Crashing — de ${durInicial} a ${plazoObj} semanas
+            <span style="font-size:11px;font-weight:normal;color:#7f8c8d;margin-left:8px;">Reducción requerida: ${durInicial - plazoObj} sem</span>
+        </h4>
+        <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr style="background:#f8f9fa;">
+                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:center;">Paso</th>
+                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;">Actividad</th>
+                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:right;">Costo del Paso</th>
+                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:right;">Costo Acumulado</th>
+                <th style="padding:7px 8px;border-bottom:2px solid #dee2e6;text-align:center;">Duración (sem)</th>
+            </tr></thead>
+            <tbody>`;
+
+    pasos.forEach((p, i) => {
+        if (p.tipo === 'paso') {
+            const ok = p.nuevaDur <= plazoObj;
+            html += `<tr style="border-bottom:1px solid #eee;background:${ok ? '#eafaf1' : 'transparent'}">
+                <td style="padding:7px 8px;text-align:center;color:#7f8c8d;font-weight:bold;">${i + 1}</td>
+                <td style="padding:7px 8px;font-weight:bold;color:#2c3e50;">Act. ${p.act}</td>
+                <td style="padding:7px 8px;text-align:right;color:#c0392b;">$${p.costoDia.toFixed(2)}/día</td>
+                <td style="padding:7px 8px;text-align:right;font-weight:bold;color:#2980b9;">$${p.costoAcum.toFixed(2)}</td>
+                <td style="padding:7px 8px;text-align:center;font-weight:bold;color:${ok ? '#1e8449' : '#2c3e50'};">${p.nuevaDur} sem ${ok ? '✅' : ''}</td>
+            </tr>`;
+        } else {
+            html += `<tr><td colspan="5" style="padding:8px;color:#e67e22;font-style:italic;">⚠️ ${p.msg}</td></tr>`;
+        }
+    });
+
+    html += `</tbody></table></div>
+        <div style="margin-top:10px;padding:10px;background:${alcanzado ? '#eafaf1' : '#fdf2e9'};border-radius:4px;font-size:13px;font-weight:bold;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <span style="color:${alcanzado ? '#1e8449' : '#c0392b'};">${alcanzado ? '✅ Plazo objetivo alcanzado' : '⚠️ No fue posible alcanzar el plazo con la compresión disponible'}</span>
+            <span>Duración final: <strong>${durActual} semanas</strong></span>
+            <span style="color:#c0392b;">Costo adicional: <strong>$${costoAcum.toFixed(2)}</strong></span>
+        </div>
+    </div>`;
+    return html;
+}
+
+function toggleTiemposDeRed() { procesarYDibujar(); }

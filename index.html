@@ -11,15 +11,28 @@
 <body>
 
     <h1>Generador de Redes PERT/CPM Profesional</h1>
+    <div class="workflow-card">
+        <h2>Enfoque de trabajo</h2>
+        <ol>
+            <li>Define las actividades, precedencias y tiempos estimados.</li>
+            <li>Calcula la red para obtener la ruta crítica, duración y varianza.</li>
+            <li>Explora el diagrama, el Gantt y la curva costo-tiempo para tomar decisiones.</li>
+        </ol>
+    </div>
 
     <div class="container">
         <div class="panel-input">
             <h2>Datos de Entrada</h2>
 
             <div class="config-bar">
-                <label style="font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px;">
-                    <input type="checkbox" id="modoPertCheck" onchange="toggleModoPert()" checked> Usar 3 Tiempos (PERT)
-                </label>
+                <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                    <label style="font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <input type="checkbox" id="modoPertCheck" onchange="toggleModoPert()" checked> Usar 3 Tiempos (PERT)
+                    </label>
+                    <label style="font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px;">
+                        <input type="checkbox" id="usarTiemposComprimidosCheck" onchange="toggleTiemposDeRed()"> Usar Tiempos Comprimidos
+                    </label>
+                </div>
                 <div class="io-actions">
                     <button class="btn-json" onclick="exportarJSON()">⬇️ Guardar JSON</button>
                     <button class="btn-json" onclick="document.getElementById('fileInput').click()">⬆️ Cargar
@@ -41,6 +54,9 @@
                             <th class="col-simple hidden">Tiempo Único</th>
                             <th>Tiempo (t)</th>
                             <th class="col-pert">Varianza (σ²)</th>
+                            <th class="col-compresion hidden">T. Comprimido</th>
+                            <th class="col-compresion hidden">Costo Normal</th>
+                            <th class="col-compresion hidden">Costo Comprimido</th>
                             <th>Acción</th>
                         </tr>
                     </thead>
@@ -58,6 +74,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="6" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="0.11" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="4" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1000" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1400" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -73,6 +92,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="9" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="2.78" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="7" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1500" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="2100" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -88,6 +110,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="4" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="0.44" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="3" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="800" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1100" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -103,6 +128,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="12" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="7.11" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="9" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="2000" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="2800" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -118,6 +146,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="10" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="1" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="8" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1200" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1600" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -133,6 +164,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="6" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="0.11" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="5" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="900" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1200" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -148,6 +182,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="8" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="7.11" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="6" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1100" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1500" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -163,6 +200,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="6" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="0.11" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="4" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1300" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1900" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -178,6 +218,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="7" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="2.78" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="5" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1000" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="1400" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -193,6 +236,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="4" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="0.11" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="3" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="700" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="950" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                         <tr>
@@ -208,6 +254,9 @@
                                     oninput="actualizarSimple(this)"></td>
                             <td><input type="number" value="4" class="tiempo-calc" disabled></td>
                             <td class="col-pert"><input type="number" value="0.44" class="varianza-calc" disabled></td>
+                            <td class="col-compresion hidden"><input type="number" value="2" class="comp-tiempo"></td>
+                            <td class="col-compresion hidden"><input type="number" value="600" class="comp-costo-normal"></td>
+                            <td class="col-compresion hidden"><input type="number" value="900" class="comp-costo-comp"></td>
                             <td><button class="btn-del" onclick="eliminarFila(this)">X</button></td>
                         </tr>
                     </tbody>
@@ -242,6 +291,9 @@
                     <button class="bloque-btn" id="btnCaso3" onclick="seleccionarCasoBloque('caso3')">
                         Caso B<br><span style="font-size:11px; font-weight:normal;">Reducción Crítica</span>
                     </button>
+                    <button class="bloque-btn" id="btnCasoC" onclick="seleccionarCasoBloque('casoC')">
+                        Caso C<br><span style="font-size:11px; font-weight:normal;">Compresión y Costos</span>
+                    </button>
                 </div>
 
                 <div class="form-grupo">
@@ -253,10 +305,13 @@
                         <label id="labelPorcentaje">Porcentaje de Éxito Requerido (%):</label>
                         <input type="number" id="inputPorcentaje" value="80" min="1" max="99">
                     </div>
+                    <div class="form-fila" id="filaPlazoCasoC" style="display:none;">
+                        <label id="labelPlazoCasoC">Reducir Duración del Proyecto a (semanas):</label>
+                        <input type="number" id="inputXCasoC" value="38">
+                    </div>
                 </div>
 
-                <button class="btn-prob" onclick="calcularEscenarioPersonalizado()">Ejecutar Simulación
-                    Estadística</button>
+                <button class="btn-prob" id="btnEjecutarAccion" onclick="ejecutarAccionSimulacion()">Ejecutar Simulación Estadística</button>
 
                 <div id="resultadoDinamico"
                     style="margin-top: 15px; font-weight: bold; color: #2c3e50; font-size: 1.05em;"></div>
@@ -265,16 +320,26 @@
         </div>
 
         <div class="panel-output">
-            <div class="tabs">
-                <button class="tab-btn active" id="btnSimple" onclick="cambiarVista('simple')">Diagrama de
-                    Nodos</button>
-                <button class="tab-btn" id="btnCPM" onclick="cambiarVista('cpm')">Red de Actividades</button>
-                <button class="tab-btn" id="btnGantt" onclick="cambiarVista('gantt')">Gráfico de Gantt</button>
+            <div class="tabs" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                <div style="display: flex; gap: 5px;">
+                    <button class="tab-btn active" id="btnSimple" onclick="cambiarVista('simple')">Diagrama de Nodos</button>
+                    <button class="tab-btn" id="btnCPM" onclick="cambiarVista('cpm')">Red de Actividades</button>
+                    <button class="tab-btn" id="btnGantt" onclick="cambiarVista('gantt')">Gráfico de Gantt</button>
+                    <button class="tab-btn" id="btnCosto" onclick="cambiarVista('costo')">Curva Costo-Tiempo</button>
+                </div>
+                <div id="zoomControls" style="display: flex; gap: 5px;">
+                    <button class="tab-btn zoom-btn" onclick="ajustarZoom(0.1)" title="Acercar">🔍 Zoom +</button>
+                    <button class="tab-btn zoom-btn" onclick="ajustarZoom(-0.1)" title="Alejar">🔍 Zoom -</button>
+                    <button class="tab-btn zoom-btn reset-zoom" onclick="resetearZoom()" title="Restablecer" style="background:#7f8c8d; color:white;">Reset Zoom</button>
+                </div>
             </div>
             <div id="canvasHint" style="font-size:11px;color:#7f8c8d;margin-bottom:4px;">🖱️ <strong>Arrastrar</strong> para mover nodos &nbsp;|&nbsp; <strong>Doble clic</strong> sobre un nodo para resetear su posición</div>
 
             <canvas id="canvasRed" width="850" height="550"></canvas>
             <div id="containerGantt" class="hidden" style="padding: 20px; overflow-x: auto;"></div>
+            <div id="containerCostoTiempo" class="hidden" style="padding: 20px; overflow-x: auto;">
+                <canvas id="canvasCostoTiempo" width="850" height="500"></canvas>
+            </div>
         </div>
     </div>
 
