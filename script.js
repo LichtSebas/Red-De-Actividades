@@ -21,6 +21,11 @@ function resetearZoom() {
 let draggingNode = null;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
+let isPanning = false;
+let panX = 0;
+let panY = 0;
+let lastPanClientX = 0;
+let lastPanClientY = 0;
 
 function initCanvasDrag() {
     const canvas = document.getElementById('canvasRed');
@@ -35,49 +40,70 @@ function getCanvasPos(canvas, e) {
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width  / rect.width;
     const scaleY = canvas.height / rect.height;
-    return { 
-        x: ((e.clientX - rect.left) * scaleX) / zoomLevel, 
-        y: ((e.clientY - rect.top) * scaleY) / zoomLevel 
+    return {
+        x: ((e.clientX - rect.left) * scaleX) / zoomLevel - panX,
+        y: ((e.clientY - rect.top) * scaleY) / zoomLevel - panY
     };
 }
 
 function hitTest(n, px, py) {
-    if (n.esDummy) return Math.hypot(n.x - px, n.y - py) < 16;
-    if (vistaActual === 'simple') return Math.hypot(n.x - px, n.y - py) < 30;
-    return Math.abs(n.x - px) < 40 && Math.abs(n.y - py) < 28;
+    const radius = n.esDummy ? 16 : 35;
+    return Math.hypot(n.x - px, n.y - py) < radius;
 }
 
 function onCanvasMouseDown(e) {
     const canvas = document.getElementById('canvasRed');
     const p = getCanvasPos(canvas, e);
+
     for (let id in nodos) {
         if (hitTest(nodos[id], p.x, p.y)) {
             draggingNode = nodos[id];
             dragOffsetX = p.x - nodos[id].x;
             dragOffsetY = p.y - nodos[id].y;
             canvas.style.cursor = 'grabbing';
-            break;
+            return;
         }
     }
+
+    isPanning = true;
+    lastPanClientX = e.clientX;
+    lastPanClientY = e.clientY;
+    canvas.style.cursor = 'grabbing';
 }
 
 function onCanvasMouseMove(e) {
     const canvas = document.getElementById('canvasRed');
     const p = getCanvasPos(canvas, e);
+
     if (draggingNode) {
         draggingNode.x = p.x - dragOffsetX;
         draggingNode.y = p.y - dragOffsetY;
         draggingNode.esManual = true;
         dibujar();
-    } else {
-        let over = false;
-        for (let id in nodos) { if (hitTest(nodos[id], p.x, p.y)) { over = true; break; } }
-        canvas.style.cursor = over ? 'grab' : 'default';
+        return;
     }
+
+    if (isPanning) {
+        const dx = (e.clientX - lastPanClientX) / zoomLevel;
+        const dy = (e.clientY - lastPanClientY) / zoomLevel;
+        panX += dx;
+        panY += dy;
+        lastPanClientX = e.clientX;
+        lastPanClientY = e.clientY;
+        dibujar();
+        return;
+    }
+
+    let over = false;
+    for (let id in nodos) {
+        if (hitTest(nodos[id], p.x, p.y)) { over = true; break; }
+    }
+    canvas.style.cursor = over ? 'grab' : 'grab';
 }
 
 function onCanvasMouseUp() {
     draggingNode = null;
+    isPanning = false;
     document.getElementById('canvasRed').style.cursor = 'default';
 }
 
@@ -692,6 +718,7 @@ function dibujar() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     ctx.save();
+    ctx.translate(panX * zoomLevel, panY * zoomLevel);
     ctx.scale(zoomLevel, zoomLevel);
 
     for (let id in nodos) {
@@ -743,7 +770,14 @@ function dibujar() {
             // Dibujar la Holgura debajo del nodo en la Red de Actividades (CPM)
             ctx.fillStyle = esCritico ? '#e74c3c' : '#3498db';
             ctx.font = 'bold 10px Arial';
-            ctx.fillText(`H: ${format(n.holgura)}`, n.x, n.y + h / 2 + 11);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillText(`H: ${format(n.holgura)}`, n.x, n.y + h / 2 + 8);
+
+            const textoT = `t:${format(n.duracion)}`;
+            ctx.font = '10px Arial';
+            ctx.fillStyle = '#444';
+            ctx.fillText(textoT, n.x, n.y + h / 2 + 24);
         }
     }
     ctx.restore();
