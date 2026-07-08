@@ -7,6 +7,57 @@ let zoomLevel = 1.0;
 let datosCurvaCostoTiempo = [];
 let capasPasos = [];
 let currentPasoIndex = 0;
+let unidadTiempo = 'semanas';
+let monedaActual = 'USD';
+const simbolosMoneda = { USD: '$', PEN: 'S/' };
+
+function normalizarUnidadTiempo(valor) {
+    return String(valor || '').trim().toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+}
+
+function obtenerClaveUnidad(valor) {
+    const clave = normalizarUnidadTiempo(valor);
+    if (['semanas', 'semana', 'sem', 'wk', 'w'].includes(clave)) return 'semanas';
+    if (['dias', 'dia', 'días', 'dí', 'd'].includes(clave)) return 'dias';
+    return clave || 'unidades';
+}
+
+function getUnidadTiempoNombre() { return unidadTiempo || 'unidades'; }
+function getUnidadTiempoAbrev() {
+    const clave = obtenerClaveUnidad(unidadTiempo);
+    if (clave === 'dias') return 'días';
+    if (clave === 'semanas') return 'sem';
+    return unidadTiempo || 'u.t.';
+}
+function getSimboloMoneda() { return simbolosMoneda[monedaActual] || monedaActual || '$'; }
+
+function cambiarUnidadTiempo(nuevaUnidad) {
+    const texto = String(nuevaUnidad || '').trim();
+    if (!texto || unidadTiempo === texto) return;
+    unidadTiempo = texto;
+    actualizarEtiquetasUnidadYMoneda();
+    procesarYDibujar();
+}
+
+function cambiarMoneda(nuevaMoneda) {
+    const texto = String(nuevaMoneda || '').trim();
+    if (!texto || monedaActual === texto) return;
+    monedaActual = texto;
+    actualizarEtiquetasUnidadYMoneda();
+    dibujarCurvaCostoTiempo();
+}
+
+function actualizarEtiquetasUnidadYMoneda() {
+    const unidadNombre = getUnidadTiempoNombre();
+    const labelPlazo = document.getElementById('labelPlazo');
+    if (labelPlazo) labelPlazo.textContent = `Plazo Objetivo del Proyecto (X ${unidadNombre}):`;
+    const labelPlazoCasoC = document.getElementById('labelPlazoCasoC');
+    if (labelPlazoCasoC) labelPlazoCasoC.textContent = `Reducir Duración del Proyecto a (${unidadNombre}):`;
+    const unidadInput = document.getElementById('unidadTiempoInput');
+    if (unidadInput) unidadInput.value = unidadTiempo;
+    const monedaInput = document.getElementById('monedaInput');
+    if (monedaInput) monedaInput.value = monedaActual;
+}
 
 // --- Funciones de Zoom ---
 function ajustarZoom(delta) {
@@ -124,6 +175,7 @@ function onCanvasDblClick(e) {
 
 document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll('#cuerpoTabla tr').forEach(tr => recalcularFila(tr.querySelector('.pert-a')));
+    actualizarEtiquetasUnidadYMoneda();
     procesarYDibujar();
     actualizarCamposVisibles();
     initCanvasDrag();
@@ -201,8 +253,8 @@ function calcularEscenarioPersonalizado() {
         divRes.innerHTML = `
                     <div style="background-color: white; padding: 14px; border-radius: 6px; border: 1px dashed #2980b9; line-height: 1.5;">
                         <span style="color:#2980b9; font-size:1.1em;">📊 <strong>Resultados del Análisis Estadístico:</strong></span><br>
-                        • Plazo Objetivo Evaluado (X) = <strong>${x} semanas</strong><br>
-                        • Duración de la Ruta Crítica (μ) = <strong>${duracionGlobalProyecto} semanas</strong><br>
+                        • Plazo Objetivo Evaluado (X) = <strong>${x} ${getUnidadTiempoNombre()}</strong><br>
+                        • Duración de la Ruta Crítica (μ) = <strong>${duracionGlobalProyecto} ${getUnidadTiempoNombre()}</strong><br>
                         • Valor Z Calculado = <span style="color:#2980b9;">${z.toFixed(4)}</span><br>
                         <hr style="border:0; border-top:1px solid #ddd; margin: 8px 0;">
                         • Probabilidad de Terminar a Tiempo = <span style="color:#27ae60; font-size:1.2em;">${prob.toFixed(2)}%</span>
@@ -226,16 +278,16 @@ function calcularEscenarioPersonalizado() {
         let reduccionRequerida = duracionGlobalProyecto - nuevaDuracionRutaCritica;
 
         let mensajeDestacado = reduccionRequerida > 0
-            ? `⚠️ La gerencia exige una <strong>REDUCCIÓN DE TIEMPO</strong> de <span style="color:#e74c3c; font-size:1.15em;">${reduccionRequerida.toFixed(2)} semanas</span> en la ruta crítica original.`
-            : `✅ No es necesario comprimir los tiempos. La red actual cubre la meta holgadamente por ${Math.abs(reduccionRequerida).toFixed(2)} semanas.`;
+            ? `⚠️ La gerencia exige una <strong>REDUCCIÓN DE TIEMPO</strong> de <span style="color:#e74c3c; font-size:1.15em;">${reduccionRequerida.toFixed(2)} ${getUnidadTiempoNombre()}</span> en la ruta crítica original.`
+            : `✅ No es necesario comprimir los tiempos. La red actual cubre la meta holgadamente por ${Math.abs(reduccionRequerida).toFixed(2)} ${getUnidadTiempoNombre()}.`;
 
         divRes.innerHTML = `
                     <div style="background-color: white; padding: 14px; border-radius: 6px; border: 2px solid #e67e22; line-height: 1.5;">
                         <span style="color:#e67e22; font-size:1.1em;">🎓 <strong>Solución de Ingeniería Inversa Realizada:</strong></span><br>
-                        • Plazo de Entrega Exigido (X) = <strong>${x} semanas</strong><br>
+                        • Plazo de Entrega Exigido (X) = <strong>${x} ${getUnidadTiempoNombre()}</strong><br>
                         • Nivel de Confianza Exigido = <strong>${porc}%</strong><br>
                         • Valor Z de Tabla Inversa = <span style="color:#7f8c8d;">${z.toFixed(4)}</span><br>
-                        • La nueva duración máxima que debe tener tu red (μ nuevo) es: <strong>${nuevaDuracionRutaCritica.toFixed(2)} semanas</strong><br>
+                        • La nueva duración máxima que debe tener tu red (μ nuevo) es: <strong>${nuevaDuracionRutaCritica.toFixed(2)} ${getUnidadTiempoNombre()}</strong><br>
                         <hr style="border: 0; border-top: 1px dashed #e67e22; margin: 10px 0;">
                         ${mensajeDestacado}
                     </div>`;
@@ -346,7 +398,7 @@ function dibujarCurvaCostoTiempo() {
         return;
     }
 
-    const padding = { top: 30, right: 30, bottom: 60, left: 70 };
+    const padding = { top: 60, right: 30, bottom: 60, left: 70 };
     const width = canvas.width - padding.left - padding.right;
     const height = canvas.height - padding.top - padding.bottom;
     const minDur = Math.min(...datosCurvaCostoTiempo.map(p => p.duracion));
@@ -376,7 +428,7 @@ function dibujarCurvaCostoTiempo() {
     ctx.fillStyle = '#2c3e50';
     ctx.font = '12px Segoe UI';
     ctx.textAlign = 'center';
-    ctx.fillText('Duración (semanas)', canvas.width / 2, canvas.height - 18);
+    ctx.fillText(`Duración (${getUnidadTiempoNombre()})`, canvas.width / 2, canvas.height - 18);
     ctx.save();
     ctx.translate(20, canvas.height / 2);
     ctx.rotate(-Math.PI / 2);
@@ -404,15 +456,15 @@ function dibujarCurvaCostoTiempo() {
         ctx.fillStyle = '#2c3e50';
         ctx.font = '11px Segoe UI';
         ctx.textAlign = index === 0 ? 'right' : 'left';
-        ctx.fillText(`${p.duracion.toFixed(1)} sem`, x + 8, y - 8);
+        ctx.fillText(`${p.duracion.toFixed(1)} ${getUnidadTiempoAbrev()}`, x + 8, y - 8);
     });
 
     ctx.fillStyle = '#34495e';
     ctx.font = '13px Segoe UI';
     ctx.textAlign = 'left';
     const ultimo = datosCurvaCostoTiempo[datosCurvaCostoTiempo.length - 1];
-    ctx.fillText(`Duración actual: ${duracionGlobalProyecto.toFixed(1)} sem`, padding.left, 20);
-    ctx.fillText(`Costo final estimado: $${Math.round(ultimo.costo).toLocaleString()}`, padding.left + 220, 20);
+    ctx.fillText(`Duración actual: ${duracionGlobalProyecto.toFixed(1)} ${getUnidadTiempoAbrev()}`, padding.left, 20);
+    ctx.fillText(`Costo final estimado: ${getSimboloMoneda()}${Math.round(ultimo.costo).toLocaleString()}`, padding.left + 220, 20);
 }
 
 function dibujarGantt() {
@@ -669,7 +721,7 @@ function procesarYDibujar() {
     duracionGlobalProyecto = nodos["FIN"].ef;
 
     document.getElementById('rutaCriticaOutput').innerText = rutaCritica.join(' -> ');
-    document.getElementById('duracionProyectoOutput').innerText = `${duracionGlobalProyecto} semanas`;
+    document.getElementById('duracionProyectoOutput').innerText = `${duracionGlobalProyecto} ${getUnidadTiempoNombre()}`;
     document.getElementById('varianzaProyectoOutput').innerText = `${Math.round(varianzaGlobalProyecto * 100) / 100}`;
 
     calcularEscenarioPersonalizado();
@@ -973,7 +1025,7 @@ function calcularCompresionCostos() {
         if (plazoObj >= durActual) {
             output += `<div style="background:#eafaf1;border-left:4px solid #27ae60;padding:12px;border-radius:4px;margin-top:12px;font-size:12px;">
                 <strong style="color:#1e8449;">✅ Sin necesidad de compresión</strong><br>
-                La duración actual (<strong>${durActual} sem</strong>) ya cumple con el plazo objetivo de <strong>${plazoObj} sem</strong>.
+                La duración actual (<strong>${durActual} ${getUnidadTiempoAbrev()}</strong>) ya cumple con el plazo objetivo de <strong>${plazoObj} ${getUnidadTiempoAbrev()}</strong>.
             </div>`;
         } else {
             output += ejecutarCrashingIterativo(actBase, durActual, plazoObj);
@@ -1005,7 +1057,7 @@ function generarTablaResumen(actBase, costoNormalTotal, costoMaxTotal) {
                 <th style="padding:8px;border-bottom:2px solid #dee2e6;">Costo Normal</th>
                 <th style="padding:8px;border-bottom:2px solid #dee2e6;">Costo Comprimido</th>
                 <th style="padding:8px;border-bottom:2px solid #dee2e6;">Costo Adicional</th>
-                <th style="padding:8px;border-bottom:2px solid #dee2e6;">Costo/Día</th>
+                <th style="padding:8px;border-bottom:2px solid #dee2e6;">Costo/${getUnidadTiempoAbrev()}</th>
                 <th style="padding:8px;border-bottom:2px solid #dee2e6;text-align:center;">Crítica?</th>
             </tr></thead>
             <tbody>`;
@@ -1014,25 +1066,23 @@ function generarTablaResumen(actBase, costoNormalTotal, costoMaxTotal) {
         const badge = a.esCritica
             ? `<span style="background:#e74c3c;color:white;padding:2px 7px;border-radius:3px;font-size:10px;font-weight:bold;">SÍ</span>`
             : `<span style="background:#95a5a6;color:white;padding:2px 7px;border-radius:3px;font-size:10px;">NO</span>`;
-        const cpdStr = (a.costoPorDia === Infinity || a.redMax === 0) ? '—' : `$${a.costoPorDia.toFixed(2)}`;
+        const cpdStr = (a.costoPorDia === Infinity || a.redMax === 0) ? '—' : `${getSimboloMoneda()}${a.costoPorDia.toFixed(2)}/${getUnidadTiempoAbrev()}`;
         html += `<tr style="border-bottom:1px solid #eee;background:${a.esCritica ? 'rgba(231,76,60,0.04)' : 'transparent'}">
             <td style="padding:8px;font-weight:bold;color:#2c3e50;">${a.id}</td>
             <td style="padding:8px;">${a.tNormal}</td>
             <td style="padding:8px;">${a.tMin}</td>
             <td style="padding:8px;font-weight:bold;color:${a.redMax > 0 ? '#27ae60' : '#7f8c8d'};">${a.redMax}</td>
-            <td style="padding:8px;">$${a.cNormal.toLocaleString()}</td>
-            <td style="padding:8px;">$${a.cComp.toLocaleString()}</td>
-            <td style="padding:8px;color:#c0392b;">$${a.costoExtra.toLocaleString()}</td>
+            <td style="padding:8px;">${getSimboloMoneda()}${a.cNormal.toLocaleString()}</td>
+            <td style="padding:8px;">${getSimboloMoneda()}${a.cComp.toLocaleString()}</td>
+            <td style="padding:8px;color:#c0392b;">${getSimboloMoneda()}${a.costoExtra.toLocaleString()}</td>
             <td style="padding:8px;font-weight:bold;color:#2980b9;">${cpdStr}</td>
             <td style="padding:8px;text-align:center;">${badge}</td>
         </tr>`;
     });
 
     html += `</tbody></table></div>
-        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;font-size:13px;font-weight:bold;background:#f9f9f9;padding:10px;border-radius:4px;border:1px solid #eee;gap:8px;">
-            <div>Costo Total Normal: <span style="color:#2c3e50;">$${costoNormalTotal.toLocaleString()}</span></div>
-            <div>Costo Máx. Comprimido: <span style="color:#2c3e50;">$${costoMaxTotal.toLocaleString()}</span></div>
-            <div style="color:#e74c3c;">Incremento Máximo: $${(costoMaxTotal - costoNormalTotal).toLocaleString()}</div>
+        <div style="display:flex;justify-content:flex-start;flex-wrap:wrap;font-size:13px;font-weight:bold;background:#f9f9f9;padding:10px;border-radius:4px;border:1px solid #eee;gap:8px;">
+            <div>Costo Total Normal: <span style="color:#2c3e50;">${getSimboloMoneda()}${costoNormalTotal.toLocaleString()}</span></div>
         </div>
     </div>`;
     return html;
@@ -1139,11 +1189,11 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj, reducirMaximo 
     const alcanzado = reducirMaximo ? true : durActual <= plazoObj;
     const col = alcanzado ? '#27ae60' : '#e67e22';
     const titulo = reducirMaximo
-        ? `🗓️ Reducción Máxima Alcanzada — de ${durInicial} a ${durActual} semanas`
-        : `🗓️ Plan de Crashing — de ${durInicial} a ${plazoObj} semanas`;
+        ? `🗓️ Reducción Máxima Alcanzada — de ${durInicial} a ${durActual} ${getUnidadTiempoNombre()}`
+        : `🗓️ Plan de Crashing — de ${durInicial} a ${plazoObj} ${getUnidadTiempoNombre()}`;
     const subtitulo = reducirMaximo
         ? `Se redujo hasta el límite de compresión disponible.`
-        : `Reducción requerida: ${durInicial - plazoObj} sem`;
+        : `Reducción requerida: ${durInicial - plazoObj} ${getUnidadTiempoAbrev()}`;
     const resultadoTexto = reducirMaximo
         ? '✅ Se alcanzó el límite máximo de compresión disponible.'
         : alcanzado
@@ -1172,9 +1222,9 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj, reducirMaximo 
             html += `<tr style="border-bottom:1px solid #eee;background:${ok ? '#eafaf1' : 'transparent'}">
                 <td style="padding:7px 8px;text-align:center;color:#7f8c8d;font-weight:bold;">${i + 1}</td>
                 <td style="padding:7px 8px;font-weight:bold;color:#2c3e50;">Act. ${p.act}</td>
-                <td style="padding:7px 8px;text-align:right;color:#c0392b;">$${p.costoDia.toFixed(2)}/día</td>
-                <td style="padding:7px 8px;text-align:right;font-weight:bold;color:#2980b9;">$${p.costoAcum.toFixed(2)}</td>
-                <td style="padding:7px 8px;text-align:center;font-weight:bold;color:${ok ? '#1e8449' : '#2c3e50'};">${p.nuevaDur} sem ${ok ? '✅' : ''}</td>
+                <td style="padding:7px 8px;text-align:right;color:#c0392b;">${getSimboloMoneda()}${p.costoDia.toFixed(2)}/${getUnidadTiempoAbrev()}</td>
+                <td style="padding:7px 8px;text-align:right;font-weight:bold;color:#2980b9;">${getSimboloMoneda()}${p.costoAcum.toFixed(2)}</td>
+                <td style="padding:7px 8px;text-align:center;font-weight:bold;color:${ok ? '#1e8449' : '#2c3e50'};">${p.nuevaDur} ${getUnidadTiempoAbrev()} ${ok ? '✅' : ''}</td>
             </tr>`;
         } else {
             html += `<tr><td colspan="5" style="padding:8px;color:#e67e22;font-style:italic;">⚠️ ${p.msg}</td></tr>`;
@@ -1184,8 +1234,8 @@ function ejecutarCrashingIterativo(actBase, durInicial, plazoObj, reducirMaximo 
     html += `</tbody></table></div>
         <div style="margin-top:10px;padding:10px;background:${alcanzado ? '#eafaf1' : '#fdf2e9'};border-radius:4px;font-size:13px;font-weight:bold;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
             <span style="color:${alcanzado ? '#1e8449' : '#c0392b'};">${resultadoTexto}</span>
-            <span>Duración final: <strong>${durActual} semanas</strong></span>
-            <span style="color:#c0392b;">Costo adicional: <strong>$${costoAcum.toFixed(2)}</strong></span>
+            <span>Duración final: <strong>${durActual} ${getUnidadTiempoNombre()}</strong></span>
+            <span style="color:#c0392b;">Costo adicional: <strong>${getSimboloMoneda()}${costoAcum.toFixed(2)}</strong></span>
         </div>
     </div>`;
     return html;
@@ -1217,11 +1267,11 @@ function actualizarPanelCapas() {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;color:#2c3e50;">
                 <div style="background:#f8f9fa;padding:12px;border-radius:6px;border:1px solid #dde2e6;">
                     <div style="color:#7f8c8d;margin-bottom:6px;">Costo adicional total</div>
-                    <div style="font-weight:700;">$${costoTotal.toFixed(2)}</div>
+                    <div style="font-weight:700;">${getSimboloMoneda()}${costoTotal.toFixed(2)}</div>
                 </div>
                 <div style="background:#f8f9fa;padding:12px;border-radius:6px;border:1px solid #dde2e6;">
                     <div style="color:#7f8c8d;margin-bottom:6px;">Duración total</div>
-                    <div style="font-weight:700;">${paso.nuevaDur.toFixed(1)} sem</div>
+                    <div style="font-weight:700;">${paso.nuevaDur.toFixed(1)} ${getUnidadTiempoAbrev()}</div>
                 </div>
             </div>
         </div>
