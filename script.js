@@ -1355,8 +1355,8 @@ function actualizarPanelCapas() {
     const total = capasPasos.length;
     const anteriorDisabled = currentPasoIndex <= 0;
     const siguienteDisabled = currentPasoIndex >= total - 1;
-    const actividadesText = paso.actividades.map(a => a.act).join(', ');
-    const costoTotal = paso.actividades.reduce((sum, item) => sum + item.costoDia, 0);
+    const actividadesText = paso.actividades.join(', ');
+    const costoTotal = paso.costoPaso !== undefined ? paso.costoPaso : 0;
 
     let html = `<div style="display:flex;flex-direction:column;gap:14px;">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
